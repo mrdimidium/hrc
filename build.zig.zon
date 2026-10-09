@@ -1,0 +1,20 @@
+// SPDX-FileCopyrightText: 2026 Nikolay Govorov
+// SPDX-License-Identifier: BSD-3-Clause
+
+.{
+    .name = .hrc,
+    .version = "0.0.0",
+    .fingerprint = 0x7037681c240e038f, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "LICENSES",
+        "REUSE.toml",
+        "LICENSE",
+        "README.md",
+    },
+}

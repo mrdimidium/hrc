@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+[settings]
+lockfile = true
+
+[tools]
+zig = "0.17"
+"pipx:reuse" = "6.2.0"
