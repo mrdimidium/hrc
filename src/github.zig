@@ -4,19 +4,26 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const api = @import("api.zig");
+const http = @import("github_api.zig");
 const Io = std.Io;
 const Self = @This();
+
+config: Config,
 
 /// A host-owned scale set listener with capacity one until runner supervision is added.
 /// next/finish are called sequentially; init only validates and allocates local state.
 allocator: std.mem.Allocator,
+
 transport: *api.Api,
-config: Config,
+
 name: []u8,
-registration_url: []u8,
+owner: []u8,
+repo: ?[]u8,
+
 authorization: []u8,
-connection: ?std.json.Parsed(Connection) = null,
-session: ?std.json.Parsed(Session) = null,
+
+connection: ?std.json.Parsed(http.Connection) = null,
+session: ?std.json.Parsed(http.Session) = null,
 scale_set_id: u64 = 0,
 last_message_id: u64 = 0,
 pending_ack: ?u64 = null,
@@ -52,31 +59,6 @@ pub const Job = struct {
     runner_id: u64 = 0,
 };
 
-const Operation = union(enum) { poll, ack: u64, acquire };
-
-const Connection = struct { url: []const u8, token: []const u8 };
-
-const Statistics = struct { totalAssignedJobs: u32 = 0 };
-
-const Session = struct {
-    sessionId: []const u8,
-    messageQueueUrl: []const u8,
-    messageQueueAccessToken: []const u8,
-    statistics: ?Statistics = null,
-};
-
-const ScaleSet = struct { id: u64 };
-
-const Label = struct { name: []const u8, type: []const u8 = "System" };
-
-const Message = struct { messageId: u64, body: []const u8 = "", statistics: Statistics };
-
-const Event = struct { messageType: []const u8, runnerRequestId: u64 = 0, runnerId: u64 = 0 };
-
-const Acquired = struct { value: []u64 };
-
-const JitConfig = struct { runner: struct { id: u64 }, encodedJITConfig: []const u8 };
-
 const TripletHashes = std.StaticStringMap([]const u8);
 
 const version_template =
@@ -94,39 +76,43 @@ const version_checksum = std.StaticStringMap(TripletHashes).initComptime(.{
     }) },
 });
 
-const json_headers = [_]std.http.Header{
-    .{ .name = "Content-Type", .value = "application/json" },
-    .{ .name = "Accept", .value = "application/json; api-version=6.0-preview" },
-};
+const json_headers = [_]std.http.Header{.{ .name = "Accept", .value = "application/json; api-version=6.0-preview" }};
 
 pub fn init(transport: *api.Api, allocator: std.mem.Allocator, cfg: Config, host: []const u8, token: []const u8) !Self {
     if (cfg.url.len == 0 or cfg.name.len == 0 or cfg.labels.len == 0 or token.len == 0)
         return error.InvalidQueueConfig;
-    for (cfg.labels) |label| if (label.len == 0) return error.InvalidLabels;
+
+    for (cfg.labels) |label|
+        if (label.len == 0) return error.InvalidLabels;
+
     var scratch = std.heap.ArenaAllocator.init(allocator);
     defer scratch.deinit();
+
     const uri = try std.Uri.parse(cfg.url);
     const path = try uri.path.toRawMaybeAlloc(scratch.allocator());
     var parts = std.mem.tokenizeScalar(u8, path, '/');
-    const owner = try api.escape(allocator, parts.next() orelse return error.InvalidQueueConfig);
-    defer allocator.free(owner);
-    const scope = if (parts.next()) |repo| blk: {
-        const escaped = try api.escape(allocator, repo);
-        defer allocator.free(escaped);
-        if (parts.next() != null) return error.InvalidQueueConfig;
-        break :blk try std.fmt.allocPrint(allocator, "repos/{s}/{s}", .{ owner, escaped });
-    } else try std.fmt.allocPrint(allocator, "orgs/{s}", .{owner});
-    defer allocator.free(scope);
-    const registration_url = try std.fmt.allocPrint(allocator, "{s}/{s}/actions/runners/registration-token", .{ std.mem.trimEnd(u8, cfg.api_url, "/"), scope });
-    errdefer allocator.free(registration_url);
+
+    const owner = try allocator.dupe(u8, parts.next() orelse return error.InvalidQueueConfig);
+    errdefer allocator.free(owner);
+
+    const repo = if (parts.next()) |name| try allocator.dupe(u8, name) else null;
+    errdefer if (repo) |name| allocator.free(name);
+
+    if (parts.next() != null)
+        return error.InvalidQueueConfig;
+
     const name = try std.fmt.allocPrint(allocator, "{s}-{s}", .{ host, cfg.name });
     errdefer allocator.free(name);
+
     return .{
+        .config = cfg,
         .allocator = allocator,
         .transport = transport,
-        .config = cfg,
+
         .name = name,
-        .registration_url = registration_url,
+        .owner = owner,
+        .repo = repo,
+
         .authorization = try std.fmt.allocPrint(allocator, "Bearer {s}", .{token}),
     };
 }
@@ -136,22 +122,27 @@ pub fn deinit(q: *Self) void {
         // Cleanup must remain possible after cancellation of a pending poll.
         const old = q.transport.client.io.swapCancelProtection(.blocked);
         defer _ = q.transport.client.io.swapCancelProtection(old);
+
         var scratch = std.heap.ArenaAllocator.init(q.allocator);
         defer scratch.deinit();
         const a = scratch.allocator();
-        const path = std.fmt.allocPrint(a, "_apis/runtime/runnerscalesets/{d}/sessions/{s}", .{ q.scale_set_id, session.value.sessionId }) catch null;
-        if (path) |p| {
-            const response = q.service(a, .DELETE, p, null) catch |err| blk: {
-                std.log.warn("cannot close GitHub listener '{s}': {s}", .{ q.name, @errorName(err) });
-                break :blk null;
-            };
-            if (response) |value| value.deinit();
-        }
+        const response = q.service(.delete_session, a, .{
+            .path = .{ .scaleSetId = q.scale_set_id, .sessionId = session.value.sessionId },
+            .query = .{},
+        }) catch |err| blk: {
+            std.log.warn("cannot close GitHub listener '{s}': {s}", .{ q.name, @errorName(err) });
+            break :blk null;
+        };
+        if (response) |value| value.deinit();
         session.deinit();
+        q.session = null;
     }
-    if (q.connection) |connection| connection.deinit();
+
+    if (q.connection) |connection|
+        connection.deinit();
     q.allocator.free(q.name);
-    q.allocator.free(q.registration_url);
+    q.allocator.free(q.owner);
+    if (q.repo) |repo| q.allocator.free(repo);
     q.allocator.free(q.authorization);
 }
 
@@ -225,7 +216,7 @@ pub fn next(q: *Self, arena: std.mem.Allocator) !Job {
         if (q.pending_ack) |id| {
             var scratch = std.heap.ArenaAllocator.init(q.allocator);
             defer scratch.deinit();
-            const acknowledged = try q.queueRequest(scratch.allocator(), .{ .ack = id }, null);
+            const acknowledged = try q.queueRequest(.acknowledge_message, scratch.allocator(), .{ .path = .{ .messageId = id } });
             acknowledged.deinit();
             q.last_message_id = id;
             q.pending_ack = null;
@@ -235,27 +226,30 @@ pub fn next(q: *Self, arena: std.mem.Allocator) !Job {
             defer scratch.deinit();
             const a = scratch.allocator();
             const name = try runnerName(q.transport.client.io, a, q.name);
-            const body = try std.json.Stringify.valueAlloc(a, .{ .name = name, .workFolder = "_work" }, .{});
-            const path = try std.fmt.allocPrint(a, "_apis/runtime/runnerscalesets/{d}/generatejitconfig", .{q.scale_set_id});
-            const response = try q.service(a, .POST, path, body);
-            defer response.deinit();
-            const jit = try std.json.parseFromSlice(JitConfig, arena, response.body, .{
-                .allocate = .alloc_always,
-                .ignore_unknown_fields = true,
+            const jit = try q.service(.generate_jit_config, a, .{
+                .path = .{ .scaleSetId = q.scale_set_id },
+                .query = .{},
+                .body = .{ .name = name, .workFolder = "_work" },
             });
+            defer jit.deinit();
             if (jit.value.encodedJITConfig.len == 0) return error.InvalidResponse;
+            errdefer q.finish(.{ .jit_config = jit.value.encodedJITConfig, .runner_id = jit.value.runner.id }, false) catch {};
+            const jit_config = try arena.dupe(u8, jit.value.encodedJITConfig);
             q.runner_id = jit.value.runner.id;
-            return .{ .jit_config = jit.value.encodedJITConfig, .runner_id = jit.value.runner.id };
+            return .{ .jit_config = jit_config, .runner_id = jit.value.runner.id };
         }
         var scratch = std.heap.ArenaAllocator.init(q.allocator);
         defer scratch.deinit();
         const a = scratch.allocator();
-        const response = try q.queueRequest(a, .poll, null);
+        const response = try q.queueRequest(.poll_messages, a, .{
+            .query = .{ .lastMessageId = q.last_message_id },
+            .headers = .{ .@"X-ScaleSetMaxCapacity" = 1 },
+        });
         defer response.deinit();
         if (response.status == .accepted) continue;
-        const message = try std.json.parseFromSlice(Message, a, response.body, .{ .ignore_unknown_fields = true });
-        const events = if (message.value.body.len == 0) null else try std.json.parseFromSlice([]Event, a, message.value.body, .{ .ignore_unknown_fields = true });
-        q.assigned = message.value.statistics.totalAssignedJobs;
+        const message = response.value orelse return error.InvalidResponse;
+        const events = if (message.body.len == 0) null else try std.json.parseFromSlice([]http.Event, a, message.body, .{ .ignore_unknown_fields = true });
+        q.assigned = message.statistics.totalAssignedJobs;
         if (events) |parsed| {
             for (parsed.value) |event| {
                 if (std.mem.eql(u8, event.messageType, "JobCompleted")) {
@@ -266,18 +260,20 @@ pub fn next(q: *Self, arena: std.mem.Allocator) !Job {
                 // Acquire at most one job, matching the current single-runner capacity.
                 for (parsed.value) |event| {
                     if (!std.mem.eql(u8, event.messageType, "JobAvailable")) continue;
-                    const body = try std.json.Stringify.valueAlloc(a, &[_]u64{event.runnerRequestId}, .{});
-                    const acquired = try q.queueRequest(a, .acquire, body);
+                    const acquired = try q.queueRequest(.acquire_jobs, a, .{
+                        .path = .{ .scaleSetId = q.scale_set_id },
+                        .query = .{},
+                        .body = &.{event.runnerRequestId},
+                    });
                     defer acquired.deinit();
-                    const ids = try std.json.parseFromSlice(Acquired, a, acquired.body, .{ .ignore_unknown_fields = true });
-                    if (ids.value.value.len > 0) {
+                    if (acquired.value.value.len > 0) {
                         q.assigned = 1;
                         break;
                     }
                 }
             }
         }
-        q.pending_ack = message.value.messageId;
+        q.pending_ack = message.messageId;
         // Zero assigned jobs also reconciles a missed completion notification.
         if (q.assigned == 0) q.runner_id = null;
     }
@@ -334,8 +330,10 @@ pub fn finish(q: *Self, request: Job, succeeded: bool) !void {
     var scratch = std.heap.ArenaAllocator.init(q.allocator);
     defer scratch.deinit();
     const a = scratch.allocator();
-    const path = try std.fmt.allocPrint(a, "_apis/distributedtask/pools/0/agents/{d}", .{request.runner_id});
-    const response = q.service(a, .DELETE, path, null) catch |err| switch (err) {
+    const response = q.service(.delete_runner, a, .{
+        .path = .{ .runnerId = request.runner_id },
+        .query = .{},
+    }) catch |err| switch (err) {
         error.NotFound => return,
         else => return err,
     };
@@ -347,32 +345,46 @@ fn refreshConnection(q: *Self) !void {
     var scratch = std.heap.ArenaAllocator.init(q.allocator);
     defer scratch.deinit();
     const a = scratch.allocator();
-    const registration = try q.transport.request(.POST, try std.Uri.parse(q.registration_url), q.authorization, null, &json_headers);
-    defer registration.deinit();
-    const token = try std.json.parseFromSlice(struct { token: []const u8 }, a, registration.body, .{ .ignore_unknown_fields = true });
-    const url = try std.fmt.allocPrint(a, "{s}/actions/runner-registration", .{std.mem.trimEnd(u8, q.config.api_url, "/")});
-    const auth = try std.fmt.allocPrint(a, "RemoteAuth {s}", .{token.value.token});
-    const body = try std.json.Stringify.valueAlloc(a, .{ .url = q.config.url, .runner_event = "register" }, .{});
-    const response = try q.transport.request(.POST, try std.Uri.parse(url), auth, body, &json_headers);
-    defer response.deinit();
-    const connection = try response.parse(Connection, q.allocator);
-    if (connection.value.url.len == 0 or connection.value.token.len == 0) {
-        connection.deinit();
-        return error.InvalidResponse;
-    }
+    const uri = try std.Uri.parse(q.config.api_url);
+    const client = http.Client.init(q.transport, uri, q.authorization);
+    const token = if (q.repo) |repo| blk: {
+        const result = try client.call(.repo_registration_token, a, .{
+            .path = .{ .owner = q.owner, .repo = repo },
+            .extra_headers = &json_headers,
+        });
+        defer result.deinit();
+        break :blk try a.dupe(u8, result.value.token);
+    } else blk: {
+        const result = try client.call(.org_registration_token, a, .{
+            .path = .{ .org = q.owner },
+            .extra_headers = &json_headers,
+        });
+        defer result.deinit();
+        break :blk try a.dupe(u8, result.value.token);
+    };
+    const auth = try std.fmt.allocPrint(a, "RemoteAuth {s}", .{token});
+    const remote = http.Client.init(q.transport, uri, auth);
+    const result = try remote.call(.register, q.allocator, .{
+        .body = .{ .url = q.config.url, .runner_event = .register },
+        .extra_headers = &json_headers,
+    });
+    errdefer result.deinit();
+    if (result.value.url.len == 0 or result.value.token.len == 0) return error.InvalidResponse;
     if (q.connection) |old| old.deinit();
-    q.connection = connection;
+    q.connection = result.parsed.?;
 }
 
-fn service(q: *Self, allocator: std.mem.Allocator, method: std.http.Method, path: []const u8, body: ?[]u8) !api.Response {
+fn service(q: *Self, comptime operation: http.Client.Operation, allocator: std.mem.Allocator, args: http.Client.Args(operation)) !http.Client.Result(operation) {
     var retried = false;
     while (true) {
         if (q.connection == null) try q.refreshConnection();
         const connection = q.connection.?.value;
-        const separator: []const u8 = if (std.mem.indexOfScalar(u8, path, '?') == null) "?" else "&";
-        const url = try std.fmt.allocPrint(allocator, "{s}/{s}{s}api-version=6.0-preview", .{ std.mem.trimEnd(u8, connection.url, "/"), path, separator });
         const auth = try std.fmt.allocPrint(allocator, "Bearer {s}", .{connection.token});
-        return q.transport.request(method, try std.Uri.parse(url), auth, body, &json_headers) catch |err| {
+        defer allocator.free(auth);
+        const client = http.Client.init(q.transport, try std.Uri.parse(connection.url), auth);
+        var request = args;
+        request.extra_headers = &json_headers;
+        return client.call(operation, allocator, request) catch |err| {
             if (err != error.Unauthorized or retried) return err;
             retried = true;
             try q.refreshConnection();
@@ -385,41 +397,43 @@ fn connect(q: *Self) !void {
     var scratch = std.heap.ArenaAllocator.init(q.allocator);
     defer scratch.deinit();
     const a = scratch.allocator();
-    const name = try api.escape(a, q.name);
-    const path = try std.fmt.allocPrint(a, "_apis/runtime/runnerscalesets?runnerGroupId={d}&name={s}", .{ q.config.runner_group_id, name });
-    const found = try q.service(a, .GET, path, null);
+    const found = try q.service(.list_scale_sets, a, .{
+        .query = .{ .runnerGroupId = q.config.runner_group_id, .name = q.name },
+    });
     defer found.deinit();
-    const list = try std.json.parseFromSlice(struct { value: []ScaleSet }, a, found.body, .{ .ignore_unknown_fields = true });
-    if (list.value.value.len > 1) return error.InvalidResponse;
-    const labels = try a.alloc(Label, q.config.labels.len);
+    if (found.value.value.len > 1) return error.InvalidResponse;
+    const labels = try a.alloc(http.Label, q.config.labels.len);
     for (q.config.labels, labels) |label, *out| out.* = .{ .name = label };
-    const settings = try std.json.Stringify.valueAlloc(a, .{
+    const settings = http.Client.Args(.create_scale_set){ .query = .{}, .body = .{
         .name = q.name,
         .runnerGroupId = q.config.runner_group_id,
         .labels = labels,
         .RunnerSetting = .{ .disableUpdate = true },
-    }, .{});
-    if (list.value.value.len == 1) {
-        q.scale_set_id = list.value.value[0].id;
-        const update_path = try std.fmt.allocPrint(a, "_apis/runtime/runnerscalesets/{d}", .{q.scale_set_id});
-        const updated = try q.service(a, .PATCH, update_path, settings);
+    } };
+    if (found.value.value.len == 1) {
+        q.scale_set_id = found.value.value[0].id;
+        const updated = try q.service(.update_scale_set, a, .{
+            .path = .{ .scaleSetId = q.scale_set_id },
+            .query = .{},
+            .body = settings.body,
+        });
         updated.deinit();
     } else {
-        const response = try q.service(a, .POST, "_apis/runtime/runnerscalesets", settings);
-        defer response.deinit();
-        const created = try std.json.parseFromSlice(ScaleSet, a, response.body, .{ .ignore_unknown_fields = true });
+        const created = try q.service(.create_scale_set, a, settings);
+        defer created.deinit();
         q.scale_set_id = created.value.id;
     }
-    const session_path = try std.fmt.allocPrint(a, "_apis/runtime/runnerscalesets/{d}/sessions", .{q.scale_set_id});
-    const body = try std.json.Stringify.valueAlloc(a, .{ .ownerName = q.name }, .{});
-    const response = try q.service(a, .POST, session_path, body);
-    defer response.deinit();
-    try q.replaceSession(response);
+    const response = try q.service(.create_session, q.allocator, .{
+        .path = .{ .scaleSetId = q.scale_set_id },
+        .query = .{},
+        .body = .{ .ownerName = q.name },
+    });
+    try q.replaceSession(response.parsed.?);
     q.assigned = if (q.session.?.value.statistics) |stats| stats.totalAssignedJobs else 0;
 }
 
-fn replaceSession(q: *Self, response: api.Response) !void {
-    const session = try response.parse(Session, q.allocator);
+/// Takes ownership of parsed session strings, including on validation failure.
+fn replaceSession(q: *Self, session: std.json.Parsed(http.Session)) !void {
     if (session.value.sessionId.len == 0 or session.value.messageQueueUrl.len == 0 or session.value.messageQueueAccessToken.len == 0) {
         session.deinit();
         return error.InvalidResponse;
@@ -428,42 +442,30 @@ fn replaceSession(q: *Self, response: api.Response) !void {
     q.session = session;
 }
 
-fn queueRequest(q: *Self, allocator: std.mem.Allocator, operation: Operation, body: ?[]u8) !api.Response {
+fn queueRequest(q: *Self, comptime operation: http.Client.Operation, allocator: std.mem.Allocator, args: http.Client.Args(operation)) !http.Client.Result(operation) {
     var retried = false;
     while (true) {
         const session = q.session.?.value;
-        const url = switch (operation) {
-            .poll => try std.fmt.allocPrint(allocator, "{s}{s}lastMessageId={d}", .{
-                session.messageQueueUrl,
-                if (std.mem.indexOfScalar(u8, session.messageQueueUrl, '?') == null) "?" else "&",
-                q.last_message_id,
-            }),
-            .ack => |id| blk: {
-                const query = std.mem.indexOfScalar(u8, session.messageQueueUrl, '?') orelse session.messageQueueUrl.len;
-                break :blk try std.fmt.allocPrint(allocator, "{s}/{d}{s}", .{ session.messageQueueUrl[0..query], id, session.messageQueueUrl[query..] });
-            },
-            .acquire => try std.fmt.allocPrint(allocator, "{s}/_apis/runtime/runnerscalesets/{d}/acquirejobs?api-version=6.0-preview", .{
-                std.mem.trimEnd(u8, q.connection.?.value.url, "/"), q.scale_set_id,
-            }),
-        };
+        var request = args;
+        request.extra_headers = &json_headers;
+        if (operation == .poll_messages) {
+            request.uri = try std.Uri.parse(session.messageQueueUrl);
+        }
         const auth = try std.fmt.allocPrint(allocator, "Bearer {s}", .{session.messageQueueAccessToken});
-        const method: std.http.Method = switch (operation) {
-            .poll => .GET,
-            .ack => .DELETE,
-            .acquire => .POST,
-        };
-        const headers: []const std.http.Header = if (operation == .poll) &.{
-            .{ .name = "X-ScaleSetMaxCapacity", .value = "1" },
-            .{ .name = "Content-Type", .value = "application/json" },
-            .{ .name = "Accept", .value = "application/json; api-version=6.0-preview" },
-        } else &json_headers;
-        return q.transport.request(method, try std.Uri.parse(url), auth, body, headers) catch |err| {
+        defer allocator.free(auth);
+        const base_uri = try std.Uri.parse(if (operation == .acknowledge_message)
+            session.messageQueueUrl
+        else
+            q.connection.?.value.url);
+        const client = http.Client.init(q.transport, base_uri, auth);
+        return client.call(operation, allocator, request) catch |err| {
             if (err != error.Unauthorized or retried) return err;
             retried = true;
-            const path = try std.fmt.allocPrint(allocator, "_apis/runtime/runnerscalesets/{d}/sessions/{s}", .{ q.scale_set_id, session.sessionId });
-            const refreshed = try q.service(allocator, .PATCH, path, null);
-            defer refreshed.deinit();
-            try q.replaceSession(refreshed);
+            const refreshed = try q.service(.refresh_session, q.allocator, .{
+                .path = .{ .scaleSetId = q.scale_set_id, .sessionId = session.sessionId },
+                .query = .{},
+            });
+            try q.replaceSession(refreshed.parsed.?);
             continue;
         };
     }

@@ -4,6 +4,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const api = @import("api.zig");
+const http = @import("forgejo_api.zig");
 const Io = std.Io;
 const Self = @This();
 
@@ -52,20 +53,12 @@ pub const Job = struct {
     runner_id: u64 = 0,
 };
 
-const Attempt = struct {
-    handle: []const u8,
-    status: []const u8,
-    runs_on: []const []const u8,
-};
-
 const Scope = union(enum) {
     user,
     admin,
     org: []const u8,
     repo: struct { owner: []const u8, name: []const u8 },
 };
-
-const Registration = struct { id: u64, uuid: []const u8, token: []const u8 };
 
 const TripletHashes = std.StaticStringMap([]const u8);
 
@@ -96,11 +89,6 @@ const version_checksum = std.StaticStringMap(TripletHashes).initComptime(.{
     }) },
 });
 
-const json_headers = [_]std.http.Header{
-    .{ .name = "Content-Type", .value = "application/json" },
-    .{ .name = "Accept", .value = "application/json" },
-};
-
 pub fn init(transport: *api.Api, allocator: std.mem.Allocator, cfg: Config, host: []const u8, token: []const u8) !Self {
     if (cfg.url.len == 0 or cfg.name.len == 0 or cfg.labels.len == 0 or cfg.poll_interval_ms == 0 or token.len == 0)
         return error.InvalidQueueConfig;
@@ -124,7 +112,7 @@ pub fn init(transport: *api.Api, allocator: std.mem.Allocator, cfg: Config, host
         },
     };
     defer allocator.free(scope);
-    const endpoint = try std.fmt.allocPrint(allocator, "{s}/api/v1/{s}/actions/runners", .{ std.mem.trimEnd(u8, cfg.url, "/"), scope });
+    const endpoint = try std.fmt.allocPrint(allocator, "{s}/api/v1/{s}", .{ std.mem.trimEnd(u8, cfg.url, "/"), scope });
     errdefer allocator.free(endpoint);
     const prefix = try std.fmt.allocPrint(allocator, "{s}-{s}", .{ host, cfg.name });
     errdefer allocator.free(prefix);
@@ -189,11 +177,9 @@ pub fn next(q: *Self, arena: std.mem.Allocator) !Job {
         defer scratch.deinit();
         const a = scratch.allocator();
         const labels = try std.mem.join(a, ",", q.config.labels);
-        const escaped = try api.escape(a, labels);
-        const url = try std.fmt.allocPrint(a, "{s}/jobs?labels={s}", .{ q.endpoint, escaped });
-        const response = try q.transport.request(.GET, try std.Uri.parse(url), q.authorization, null, &json_headers);
-        defer response.deinit();
-        const jobs = try std.json.parseFromSlice(?[]Attempt, a, response.body, .{ .ignore_unknown_fields = true });
+        const client = http.Client.init(q.transport, try std.Uri.parse(q.endpoint), q.authorization);
+        const jobs = try client.call(.list_jobs, a, .{ .query = .{ .labels = labels } });
+        defer jobs.deinit();
         const waiting = jobs.value orelse &.{};
         // Forget attempts once the server stops reporting them as waiting.
         var keys = q.submitted.keyIterator();
@@ -216,8 +202,7 @@ pub fn next(q: *Self, arena: std.mem.Allocator) !Job {
             for (q.config.labels, runner_labels) |label, *runner_label|
                 runner_label.* = try std.fmt.allocPrint(arena, "{s}:host", .{label});
             const name = try runnerName(q.transport.client.io, a, q.prefix);
-            const body = try std.json.Stringify.valueAlloc(a, .{ .name = name, .ephemeral = true }, .{});
-            // Reserve the handle before registration, so no allocation can leak a remote runner afterwards.
+            // Reserve before registration, so deduplication cannot fail after creating a runner.
             const key = try q.allocator.dupe(u8, handle);
             q.submitted.put(key, {}) catch |err| {
                 q.allocator.free(key);
@@ -227,18 +212,18 @@ pub fn next(q: *Self, arena: std.mem.Allocator) !Job {
                 _ = q.submitted.remove(key);
                 q.allocator.free(key);
             }
-            const registered = try q.transport.request(.POST, try std.Uri.parse(q.endpoint), q.authorization, body, &json_headers);
-            defer registered.deinit();
-            const runner = try std.json.parseFromSlice(Registration, arena, registered.body, .{
-                .allocate = .alloc_always,
-                .ignore_unknown_fields = true,
-            });
+            const runner = try client.call(.register_runner, a, .{ .body = .{ .name = name, .ephemeral = true } });
+            defer runner.deinit();
+            errdefer if (runner.value.id != 0) {
+                const removed = client.call(.delete_runner, a, .{ .path = .{ .runnerId = runner.value.id } }) catch null;
+                if (removed) |result| result.deinit();
+            };
             if (runner.value.id == 0 or runner.value.uuid.len == 0 or runner.value.token.len == 0)
                 return error.InvalidResponse;
             return .{
                 .url = q.config.url,
-                .uuid = runner.value.uuid,
-                .token = runner.value.token,
+                .uuid = try arena.dupe(u8, runner.value.uuid),
+                .token = try arena.dupe(u8, runner.value.token),
                 .runner_id = runner.value.id,
                 .labels = runner_labels,
                 .handle = handle,
@@ -321,9 +306,8 @@ pub fn finish(q: *Self, request: Job, succeeded: bool) !void {
             if (q.submitted.fetchRemove(handle)) |entry| q.allocator.free(entry.key);
         }
     }
-    const url = try std.fmt.allocPrint(q.allocator, "{s}/{d}", .{ q.endpoint, request.runner_id });
-    defer q.allocator.free(url);
-    const response = q.transport.request(.DELETE, try std.Uri.parse(url), q.authorization, null, &json_headers) catch |err| switch (err) {
+    const client = http.Client.init(q.transport, try std.Uri.parse(q.endpoint), q.authorization);
+    const response = client.call(.delete_runner, q.allocator, .{ .path = .{ .runnerId = request.runner_id } }) catch |err| switch (err) {
         error.NotFound => return, // Ephemeral registrations normally remove themselves.
         else => return err,
     };
