@@ -24,8 +24,6 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
-        with:
-          install_args: zig pipx:reuse
 
       - name: Check REUSE compliance
         run: reuse lint
@@ -50,8 +48,12 @@ jobs:
             case "$target" in
               *-windows) extension=".exe" ;;
             esac
-            zig build -Doptimize=ReleaseSafe -Dtarget="$target"
+            build_started=$(date +%s)
+            echo "[$(date -u +%FT%TZ)] Building $target (ReleaseSafe)"
+            zig build -Doptimize=ReleaseSafe -Dtarget="$target" --summary all
             cp "zig-out/bin/hrc$extension" "dist/hrc-$target$extension"
+            build_elapsed=$(( $(date +%s) - build_started ))
+            echo "[$(date -u +%FT%TZ)] Finished $target in ${build_elapsed}s"
           done
 
       - name: Generate SHA-256 checksums

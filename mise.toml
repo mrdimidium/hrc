@@ -6,4 +6,5 @@ lockfile = true
 
 [tools]
 zig = "0.17"
+uv = "0.12.5"
 "pipx:reuse" = "6.2.0"
