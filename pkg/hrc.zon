@@ -4,14 +4,31 @@
 .{
     // Stable identity of this host.
     .id = "build-01",
-    // Runner installation and workspace directory, relative to the working directory.
-    .rundir = "./runners",
+    // Persistent runner binaries, downloaded once and reused.
+    .bindir = "./hrc/bin",
+    // Temporary job workspaces, relative to the working directory.
+    .rundir = "./hrc/build",
     .groups = .{
-        .{ .github = .{
-            .version = "2.338.0",
-        } },
-        .{ .forgejo = .{
-            .version = "13.0.0-zsf",
-        } },
+        .{
+            .github = .{
+                .version = "2.338.0",
+                .url = "https://github.com/example-org",
+                .name = "github-builds",
+                .labels = .{ "linux", "X64" },
+                .runner_group_id = 1,
+                // Read a PAT with permission to manage runners from the environment.
+                .token_env = "GITHUB_TOKEN",
+            },
+        },
+        .{
+            .forgejo = .{
+                .version = "13.0.0-zsf",
+                .url = "https://forgejo.example.com",
+                .name = "forgejo-builds",
+                .labels = .{"linux"},
+                .scope = .{ .org = "example-org" },
+                .token_env = "FORGEJO_TOKEN",
+            },
+        },
     },
 }

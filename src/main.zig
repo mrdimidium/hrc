@@ -4,21 +4,9 @@
 const std = @import("std");
 const build_options = @import("build_options");
 
-const config = @import("config.zig");
+const Daemon = @import("daemon.zig");
 
 const Io = std.Io;
-
-/// Runner backends share download(io, allocator, dst, version).
-/// dst is a new installation directory for either backend.
-pub const github = @import("github.zig");
-pub const forgejo = @import("forgejo.zig");
-
-const Provider = union(enum) {
-    github: github.Config,
-    forgejo: forgejo.Config,
-};
-
-const Config = config.Config(Provider);
 
 const Args = struct {
     help: bool = false,
@@ -47,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
             \\       hrc -version
             \\
             \\Options:
-            \\  -config <path.zon>  Read the ZON config and print it to stdout.
+            \\  -config <path.zon>  Listen for jobs from the configured groups.
             \\  -help               Print this help and exit.
             \\  -version            Print the application version and exit.
             \\
@@ -64,14 +52,13 @@ pub fn main(init: std.process.Init) !void {
         std.process.fatal("MissingArgument. Usage: hrc -config <path.zon> (or -help / -version)", .{});
 
     var diagnostics: std.zon.parse.Diagnostics = undefined;
-    const cfg = Config.load(io, init.gpa, arena, args.config, &diagnostics) catch |err| switch (err) {
+    const cfg = Daemon.Config.load(io, init.gpa, arena, args.config, &diagnostics) catch |err| switch (err) {
         error.ParseZon => diagnostics.fatal(args.config),
         else => std.process.fatal("cannot load config '{s}': {s}", .{ args.config, @errorName(err) }),
     };
 
-    try std.zon.stringify.serialize(cfg, .{}, stdout_writer);
-    try stdout_writer.writeByte('\n');
-    try stdout_writer.flush();
+    var daemon = Daemon.init(io, init.gpa, init.environ_map, cfg);
+    try daemon.run();
 }
 
 /// Parse strings as `-field value` and bools as `-field`.
@@ -122,7 +109,7 @@ fn parseArgs(comptime T: type, argv: []const []const u8) !T {
     return result;
 }
 
-test "config argument value is unambiguous" {
+test "parseArgs: config argument value is unambiguous" {
     const args = try parseArgs(Args, &.{ "-config", "config.zon" });
     try std.testing.expectEqualStrings("config.zon", args.config);
     try std.testing.expect(!args.help);
@@ -135,7 +122,7 @@ test "config argument value is unambiguous" {
     try std.testing.expectError(error.DuplicateArgument, parseArgs(Args, &.{ "-config", "a.zon", "-config", "b.zon" }));
 }
 
-test "generic arguments are matched by field name in any order" {
+test "parseArgs: generic arguments are matched by field name in any order" {
     const Options = struct { config: []const u8, output: []const u8 };
     const args = try parseArgs(Options, &.{ "-output", "out.zon", "-config", "config.zon" });
     try std.testing.expectEqualStrings("config.zon", args.config);
@@ -145,7 +132,7 @@ test "generic arguments are matched by field name in any order" {
     try std.testing.expectError(error.UnknownArgument, parseArgs(Options, &.{ "-unknown", "value" }));
 }
 
-test "boolean flags do not consume values and preserve defaults" {
+test "parseArgs: boolean flags do not consume values and preserve defaults" {
     const help = try parseArgs(Args, &.{"-help"});
     try std.testing.expect(help.help);
     try std.testing.expectEqualStrings("", help.config);
@@ -166,7 +153,7 @@ test "boolean flags do not consume values and preserve defaults" {
     try std.testing.expect((try parseArgs(Options, &.{"-verbose"})).verbose);
 }
 
-test "version flag does not require a config" {
+test "parseArgs: version flag does not require a config" {
     const args = try parseArgs(Args, &.{"-version"});
     try std.testing.expect(args.version);
     try std.testing.expect(!args.help);
@@ -175,15 +162,6 @@ test "version flag does not require a config" {
     try std.testing.expect(combined.version and combined.help);
     try std.testing.expectEqualStrings("config.zon", combined.config);
     try std.testing.expectError(error.DuplicateArgument, parseArgs(Args, &.{ "-version", "-version" }));
-}
-
-test "runner backends implement the same download interface" {
-    const Download = *const fn (Io, std.mem.Allocator, []const u8, []const u8) anyerror!void;
-    const backends = [_]Download{ github.download, forgejo.download };
-    for (backends) |download| {
-        try std.testing.expectError(error.InvalidVersion, download(std.testing.io, std.testing.allocator, "unused", "../../etc"));
-        try std.testing.expectError(error.UnknownVersion, download(std.testing.io, std.testing.allocator, "unused", "0.0.0"));
-    }
 }
 
 test {

@@ -11,9 +11,13 @@ pub fn Config(comptime Provider: type) type {
         /// Stable host identity used as the listener owner and runner name prefix.
         id: []const u8,
 
-        /// Parent directory for per-launch runner installations and workspaces.
-        rundir: []const u8 = "./runners",
+        /// Persistent directory for downloaded runner binaries, grouped by provider and version.
+        bindir: []const u8 = "./hrc/bin",
 
+        /// Parent directory for temporary per-job workspaces.
+        rundir: []const u8 = "./hrc/build",
+
+        /// Provider configurations; each group creates an independent queue.
         groups: []const Provider,
 
         /// Read a UTF-8 ZON file, limiting its size to 1 MiB.
@@ -68,7 +72,7 @@ test "parse groups for both providers and default rundir" {
         \\} }
     , &diagnostics);
     try std.testing.expectEqualStrings("build-01", config.id);
-    try std.testing.expectEqualStrings("./runners", config.rundir);
+    try std.testing.expectEqualStrings("./hrc/build", config.rundir);
     try std.testing.expectEqual(@as(usize, 2), config.groups.len);
     try std.testing.expectEqual(std.meta.Tag(Provider).github, std.meta.activeTag(config.groups[0]));
     try std.testing.expectEqualStrings("2.338.0", config.groups[0].github.version);
