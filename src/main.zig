@@ -4,7 +4,10 @@
 const std = @import("std");
 const Io = std.Io;
 
-const hrc = @import("hrc");
+/// Runner backends share download(io, allocator, dst, version).
+/// dst is a new installation directory for either backend.
+pub const github = @import("github.zig");
+pub const forgejo = @import("forgejo.zig");
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -19,11 +22,15 @@ pub fn main(init: std.process.Init) !void {
     var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
     const stdout_writer = &stdout_file_writer.interface;
 
-    try printAnotherMessage(stdout_writer);
-
+    try stdout_writer.print("Run `zig build test` to run the tests.\n", .{});
     try stdout_writer.flush();
 }
 
-pub fn printAnotherMessage(writer: *Io.Writer) !void {
-    try writer.print("Run `zig build test` to run the tests.\n", .{});
+test "runner backends implement the same download interface" {
+    const Download = *const fn (Io, std.mem.Allocator, []const u8, []const u8) anyerror!void;
+    const backends = [_]Download{ github.download, forgejo.download };
+    for (backends) |download| {
+        try std.testing.expectError(error.InvalidVersion, download(std.testing.io, std.testing.allocator, "unused", "../../etc"));
+        try std.testing.expectError(error.UnknownVersion, download(std.testing.io, std.testing.allocator, "unused", "0.0.0"));
+    }
 }
