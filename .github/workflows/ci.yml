@@ -41,7 +41,9 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           for target in \
-            x86_64-linux-musl aarch64-linux-musl \
+            x86_64-linux-musl aarch64-linux-musl riscv64-linux-musl \
+            x86_64-openbsd aarch64-openbsd \
+            x86_64-freebsd aarch64-freebsd \
             x86_64-macos aarch64-macos \
             x86_64-windows aarch64-windows; do
             extension=""
