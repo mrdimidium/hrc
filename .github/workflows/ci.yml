@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: zig
+
+      - name: Check formatting
+        run: zig fmt --check build.zig build.zig.zon src
+
+      - name: Run tests
+        run: zig build test
+
+      - name: Build release binaries
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in \
+            x86_64-linux-musl aarch64-linux-musl \
+            x86_64-macos aarch64-macos \
+            x86_64-windows aarch64-windows; do
+            extension=""
+            case "$target" in
+              *-windows) extension=".exe" ;;
+            esac
+            zig build -Doptimize=ReleaseSafe -Dtarget="$target"
+            cp "zig-out/bin/hrc$extension" "dist/hrc-$target$extension"
+          done
+
+      - name: Generate SHA-256 checksums
+        working-directory: dist
+        run: |
+          sha256sum hrc-* > SHASUM
+          sha256sum --check SHASUM
+
+      - name: Publish binaries and checksums
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Move the development tag to the commit used by this build.
+          if gh api "repos/$GH_REPO/git/ref/tags/dev" > /dev/null; then
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/dev" \
+              -f sha="$COMMIT" -F force=true
+          else
+            gh api --method POST "repos/$GH_REPO/git/refs" \
+              -f ref=refs/tags/dev -f sha="$COMMIT"
+          fi
+
+          notes="Development build from commit $COMMIT."
+          if gh release view dev > /dev/null; then
+            gh release edit dev --title dev --notes "$notes" --prerelease --latest=false
+          else
+            gh release create dev --verify-tag --title dev --notes "$notes" \
+              --prerelease --latest=false
+          fi
+          gh release upload dev dist/* --clobber
