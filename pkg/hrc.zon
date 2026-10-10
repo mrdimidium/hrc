@@ -1,0 +1,17 @@
+// SPDX-FileCopyrightText: 2026 Nikolay Govorov
+// SPDX-License-Identifier: BSD-3-Clause
+
+.{
+    // Stable identity of this host.
+    .id = "build-01",
+    // Runner installation and workspace directory, relative to the working directory.
+    .rundir = "./runners",
+    .groups = .{
+        .{ .github = .{
+            .version = "2.338.0",
+        } },
+        .{ .forgejo = .{
+            .version = "13.0.0-zsf",
+        } },
+    },
+}

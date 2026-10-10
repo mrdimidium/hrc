@@ -7,6 +7,9 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const options = b.addOptions();
+    options.addOption([]const u8, "version", @import("build.zig.zon").version);
+
     const exe = b.addExecutable(.{
         .name = "hrc",
         .root_module = b.createModule(.{
@@ -15,6 +18,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    exe.root_module.addOptions("build_options", options);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -22,6 +26,6 @@ pub fn build(b: *std.Build) void {
     run_cmd.addPassthruArgs();
     b.step("run", "Run the app").dependOn(&run_cmd.step);
 
-    const run_test = b.addRunArtifact(b.addTest(.{.root_module = exe.root_module}));
+    const run_test = b.addRunArtifact(b.addTest(.{ .root_module = exe.root_module }));
     b.step("test", "Run tests").dependOn(&run_test.step);
 }

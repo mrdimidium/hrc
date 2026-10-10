@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Io = std.Io;
 
-const builtin = @import("builtin");
-const fetch = @import("download.zig");
+const fetch = @import("fetch.zig");
+
+pub const Config = struct {
+    version: []const u8,
+};
 
 const TripletHashes = std.StaticStringMap([]const u8);
 
