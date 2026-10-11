@@ -9,6 +9,8 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const strip = b.option(bool, "strip", "Strip debug symbols") orelse true;
+
     const base = b.option([]const u8, "version", "Override version from build.zig.zon") orelse
         @import("build.zig.zon").version;
 
@@ -63,6 +65,7 @@ pub fn build(b: *std.Build) !void {
         .name = "hrc",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
+            .strip = strip,
             .target = target,
             .optimize = optimize,
         }),
