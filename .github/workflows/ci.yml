@@ -6,6 +6,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['release-[0-9]*']
   pull_request:
   workflow_dispatch:
 
@@ -14,7 +15,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/release-') }}
 
 jobs:
   build:
@@ -23,6 +24,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
 
       - name: Check REUSE compliance
@@ -34,56 +37,71 @@ jobs:
       - name: Run tests
         run: zig build test
 
-      - name: Build release binaries
+      - name: Build release archives
+        id: release
         run: |
           set -euo pipefail
-          mkdir -p dist
           for target in \
             x86_64-linux-musl aarch64-linux-musl riscv64-linux-musl \
             x86_64-openbsd aarch64-openbsd \
             x86_64-freebsd aarch64-freebsd \
             x86_64-macos aarch64-macos \
             x86_64-windows aarch64-windows; do
-            extension=""
-            case "$target" in
-              *-windows) extension=".exe" ;;
-            esac
-            build_started=$(date +%s)
-            echo "[$(date -u +%FT%TZ)] Building $target (ReleaseSafe)"
-            zig build -Doptimize=ReleaseSafe -Dtarget="$target" --summary all
-            cp "zig-out/bin/hrc$extension" "dist/hrc-$target$extension"
-            build_elapsed=$(( $(date +%s) - build_started ))
-            echo "[$(date -u +%FT%TZ)] Finished $target in ${build_elapsed}s"
+            zig build release -Dtarget="$target" -Doptimize=ReleaseSafe -j2 --summary all
           done
+          echo "version=$(cat zig-out/release/VERSION)" >> "$GITHUB_OUTPUT"
 
-      - name: Generate SHA-256 checksums
-        working-directory: dist
+      - name: Generate and verify release checksums
         run: |
-          sha256sum hrc-* > SHASUM
-          sha256sum --check SHASUM
+          cd zig-out/release
+          sha256sum hrc-*.tar.gz > SHASUMS256.txt
+          sha256sum --check SHASUMS256.txt
 
-      - name: Publish binaries and checksums
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      - name: Publish release
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/release-'))
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          COMMIT: ${{ github.sha }}
+          HRC_VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
-          # Move the development tag to the commit used by this build.
-          if gh api "repos/$GH_REPO/git/ref/tags/dev" > /dev/null; then
-            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/dev" \
-              -f sha="$COMMIT" -F force=true
+          if [ "$GITHUB_REF" = refs/heads/main ]; then
+            tag=dev
+            # Move the development tag to the commit used by this build.
+            if gh api "repos/$GH_REPO/git/ref/tags/$tag" > /dev/null; then
+              gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$tag" \
+                -f sha="$GITHUB_SHA" -F force=true
+            else
+              gh api --method POST "repos/$GH_REPO/git/refs" \
+                -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA"
+            fi
+            notes="Development build $HRC_VERSION from commit $GITHUB_SHA."
+            if gh release view "$tag" > /dev/null; then
+              gh release edit "$tag" --title "$tag" --notes "$notes" --prerelease --latest=false
+            else
+              gh release create "$tag" --verify-tag --title "$tag" --notes "$notes" \
+                --prerelease --latest=false
+            fi
           else
-            gh api --method POST "repos/$GH_REPO/git/refs" \
-              -f ref=refs/tags/dev -f sha="$COMMIT"
+            tag="${GITHUB_REF#refs/tags/}"
+            # Published release contents are immutable; a failed draft can be retried.
+            if gh release view "$tag" --json isDraft > "$RUNNER_TEMP/hrc-release.json"; then
+              if ! jq -e '.isDraft == true' "$RUNNER_TEMP/hrc-release.json" > /dev/null; then
+                echo "Release $tag is already published; refusing to overwrite it." >&2
+                exit 1
+              fi
+            else
+              gh release create "$tag" --verify-tag --draft --title "$HRC_VERSION" --generate-notes
+            fi
           fi
 
-          notes="Development build from commit $COMMIT."
-          if gh release view dev > /dev/null; then
-            gh release edit dev --title dev --notes "$notes" --prerelease --latest=false
+          gh release upload "$tag" zig-out/release/*.tar.gz zig-out/release/SHASUMS256.txt --clobber
+          if [ "$tag" = dev ]; then
+            # Versioned filenames change on every run; retain only this build's assets.
+            gh release view "$tag" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/hrc-assets.txt"
+            while IFS= read -r asset; do
+              if [ ! -f "zig-out/release/$asset" ]; then gh release delete-asset "$tag" "$asset" --yes; fi
+            done < "$RUNNER_TEMP/hrc-assets.txt"
           else
-            gh release create dev --verify-tag --title dev --notes "$notes" \
-              --prerelease --latest=false
+            gh release edit "$tag" --draft=false
           fi
-          gh release upload dev dist/* --clobber

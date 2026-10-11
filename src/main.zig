@@ -44,7 +44,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
     if (args.version) {
-        try stdout_writer.print("{s}\n", .{build_options.version});
+        try stdout_writer.print("{f}\n", .{build_options.version});
         try stdout_writer.flush();
         return;
     }

@@ -3,7 +3,7 @@
 
 .{
     .name = .hrc,
-    .version = "0.0.0",
+    .version = "0.1.0",
     .fingerprint = 0x7037681c240e038f, // Changing this has security and trust implications.
     .minimum_zig_version = "0.17.0",
     .dependencies = .{},
@@ -11,9 +11,9 @@
         "build.zig",
         "build.zig.zon",
         "src",
-        "LICENSES",
-        "REUSE.toml",
         "LICENSE",
+        "LICENSES",
         "README.md",
+        "REUSE.toml",
     },
 }

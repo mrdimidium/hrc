@@ -5,9 +5,9 @@
     // Stable identity of this host.
     .id = "build-01",
     // Persistent runner binaries, downloaded once and reused.
-    .bindir = "./hrc/bin",
-    // Temporary job workspaces, relative to the working directory.
-    .rundir = "./hrc/build",
+    .bindir = "/var/lib/hrc/bin",
+    // Build-account workspace. Requires controller support for hrc-build.
+    .rundir = "/var/lib/hrc-build/jobs",
     .groups = .{
         .{
             .github = .{
