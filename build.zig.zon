@@ -6,7 +6,78 @@
     .version = "0.1.0",
     .fingerprint = 0x7037681c240e038f, // Changing this has security and trust implications.
     .minimum_zig_version = "0.17.0",
-    .dependencies = .{},
+    .dependencies = .{
+        .node20_linux_x64 = .{
+            .url = "https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.gz",
+            .hash = "N-V-__8AADqMigmS5pa-MdWGTibso-HZNqWkZPT2OJZQxA2A",
+            .lazy = true,
+        },
+        .node20_linux_arm64 = .{
+            .url = "https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-arm64.tar.gz",
+            .hash = "N-V-__8AAFWuiQlRUzQhIdM80B3OOc2Hatqkhv2FcBEFq0dh",
+            .lazy = true,
+        },
+        .node20_macos_x64 = .{
+            .url = "https://nodejs.org/dist/v20.20.2/node-v20.20.2-darwin-x64.tar.gz",
+            .hash = "N-V-__8AAI23JQkkFbsHzctn_cAtMsO7C6QI9fln9o3hPbFd",
+            .lazy = true,
+        },
+        .node20_macos_arm64 = .{
+            .url = "https://nodejs.org/dist/v20.20.2/node-v20.20.2-darwin-arm64.tar.gz",
+            .hash = "N-V-__8AAGCn_wj2oX1lKEca0dYVszSa33FtPxlm2FJipFeg",
+            .lazy = true,
+        },
+        .node20_windows_x64 = .{
+            .url = "https://nodejs.org/dist/v20.20.2/node-v20.20.2-win-x64.zip",
+            .hash = "N-V-__8AALXGAgW8BVeBAxf_olNQtgirvygHIUB300FuuMAL",
+            .lazy = true,
+        },
+        .node20_windows_arm64 = .{
+            .url = "https://nodejs.org/dist/v20.20.2/node-v20.20.2-win-arm64.zip",
+            .hash = "N-V-__8AALVknAQD1yoEbIrsKg94O4p96lbnYlu-xiSIaEfd",
+            .lazy = true,
+        },
+        .node20_alpine_x64 = .{
+            .url = "https://github.com/actions/alpine_nodejs/releases/download/v20.20.2/node-v20.20.2-alpine-x64.tar.gz",
+            .hash = "N-V-__8AANfoPwZWa6HdkrGYmPHN-_vV5huub7xkhFDC_zN0",
+            .lazy = true,
+        },
+        .node24_linux_x64 = .{
+            .url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.gz",
+            .hash = "N-V-__8AAFiLAAz4eZ0CI3Ix3ELl4NVjS4gdtbHPfKQ8RERu",
+            .lazy = true,
+        },
+        .node24_linux_arm64 = .{
+            .url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-arm64.tar.gz",
+            .hash = "N-V-__8AABwPyAv-sHYCP88qGTtwbNHF_sC1R5Fh1l0voT0r",
+            .lazy = true,
+        },
+        .node24_macos_x64 = .{
+            .url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-x64.tar.gz",
+            .hash = "N-V-__8AAFFV7Av3FKv2CqLQyM9hXSmnKqf0qi6vRZtAY3_v",
+            .lazy = true,
+        },
+        .node24_macos_arm64 = .{
+            .url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-arm64.tar.gz",
+            .hash = "N-V-__8AAORkvAv7VqJNY9naojbfg0Y5iYhy3Taz9yryIr5v",
+            .lazy = true,
+        },
+        .node24_windows_x64 = .{
+            .url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip",
+            .hash = "N-V-__8AAAt8YAbkZwWixmb09gpaj1RlLDoNfgem5LMyKmWN",
+            .lazy = true,
+        },
+        .node24_windows_arm64 = .{
+            .url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-arm64.zip",
+            .hash = "N-V-__8AAAv6rQXvZ04zC6KNRXVdBomTcmtRa_EZPI2GoIZC",
+            .lazy = true,
+        },
+        .node24_alpine_x64 = .{
+            .url = "https://github.com/actions/alpine_nodejs/releases/download/v24.21.0/node-v24.21.0-alpine-x64.tar.gz",
+            .hash = "N-V-__8AABkl5QcDgKDFJfmIQyBcVMDsBoKGKbCUXQKfPZ1l",
+            .lazy = true,
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

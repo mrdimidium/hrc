@@ -31,8 +31,8 @@ assigned: u32 = 0,
 runner_id: ?u64 = null,
 
 pub const Config = struct {
-    /// GitHub runner release version to install.
-    version: []const u8,
+    /// Must match the runner shipped with this hrc build.
+    version: []const u8 = @import("build_options").runner_version,
 
     /// Unique group suffix; scale set name is <host id>-<name>.
     name: []const u8 = "",
@@ -58,23 +58,6 @@ pub const Job = struct {
     jit_config: []const u8,
     runner_id: u64 = 0,
 };
-
-const TripletHashes = std.StaticStringMap([]const u8);
-
-const version_template =
-    "https://github.com/actions/runner/releases/download/v{s}/actions-runner-{s}-{s}.{s}";
-
-const version_checksum = std.StaticStringMap(TripletHashes).initComptime(.{
-    .{ "2.338.0", TripletHashes.initComptime(.{
-        .{ "linux-x64", "af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32" },
-        .{ "linux-arm64", "628b4a7258487b80c1d3c221095a7ded349f5ae0175fd3dfab708d07428f041b" },
-        .{ "linux-arm", "1d6a7688d2aca1a1fecd4df5d473e4aa4226c1f1785ff915cf84049665a3483f" },
-        .{ "osx-x64", "dea7a58796ce215fc424a8b27c0fdd9b813fa5fc03d109a4a1d38131d6bfa1a3" },
-        .{ "osx-arm64", "df4cebda25c86a886ed204e49fee63f5c2e7cec5f447b5c98440a826bbdf9df2" },
-        .{ "win-x64", "f48e0750a21812bca5f82de5f7f5aeae71abee647fab5a582f1742d07eba455f" },
-        .{ "win-arm64", "a57a4d29c0dcf02210a16b01906ed76cb8091b26d728c41232736c0f627a557e" },
-    }) },
-});
 
 const json_headers = [_]std.http.Header{.{ .name = "Accept", .value = "application/json; api-version=6.0-preview" }};
 
@@ -146,67 +129,35 @@ pub fn deinit(q: *Self) void {
     q.allocator.free(q.authorization);
 }
 
-/// Downloads and extracts the configured host runner package into a new directory.
-pub fn download(self: *Self, dst: []const u8) anyerror!void {
-    const transport = self.transport;
-    const io = transport.client.io;
-    const version = self.config.version;
-    _ = try std.SemanticVersion.parse(version);
-    const triplets = version_checksum.get(version) orelse return error.UnknownVersion;
-
-    const platform = switch (builtin.os.tag) {
-        .linux => switch (builtin.cpu.arch) {
-            .x86_64 => "linux-x64",
-            .aarch64 => "linux-arm64",
-            .arm => "linux-arm",
-            else => return error.UnsupportedPlatform,
-        },
-        .macos => switch (builtin.cpu.arch) {
-            .x86_64 => "osx-x64",
-            .aarch64 => "osx-arm64",
-            else => return error.UnsupportedPlatform,
-        },
-        .windows => switch (builtin.cpu.arch) {
-            .x86_64 => "win-x64",
-            .aarch64 => "win-arm64",
-            else => return error.UnsupportedPlatform,
-        },
-        else => return error.UnsupportedPlatform,
-    };
-    var url_buffer: [1024]u8 = undefined;
-    var path_buffer: [Io.Dir.max_path_bytes]u8 = undefined;
-
-    const sha = triplets.get(platform) orelse return error.UnsupportedPlatform;
-    const ext = if (builtin.os.tag == .windows) "zip" else "tar.gz";
-    const url = try std.fmt.bufPrint(&url_buffer, version_template, .{ version, platform, version, ext });
-    const path = try std.fmt.bufPrint(&path_buffer, "{s}.{s}", .{ dst, ext });
-
+/// Copy the packaged distribution into a writable installation for JIT credentials.
+pub fn install(self: *Self, source: []const u8, dst: []const u8) anyerror!void {
+    const io = self.transport.client.io;
+    _ = try std.SemanticVersion.parse(self.config.version);
+    if (!std.mem.eql(u8, self.config.version, @import("build_options").runner_version))
+        return error.RunnerVersionMismatch;
     const cwd = Io.Dir.cwd();
-    if (std.fs.path.dirname(dst)) |parent| try cwd.createDirPath(io, parent);
-
+    var from = try cwd.openDir(io, source, .{ .iterate = true });
+    defer from.close(io);
+    const version = try from.readFileAlloc(io, "VERSION", self.allocator, .limited(128));
+    defer self.allocator.free(version);
+    if (!std.mem.eql(u8, std.mem.trim(u8, version, " \r\n"), self.config.version))
+        return error.RunnerVersionMismatch;
     try cwd.createDir(io, dst, .default_dir);
     errdefer cwd.deleteTree(io, dst) catch {};
-
-    var dir = try cwd.openDir(io, dst, .{});
-    defer dir.close(io);
-
-    try transport.download(try std.Uri.parse(url), sha, path);
-    defer cwd.deleteFile(io, path) catch {};
-
-    const archive = try cwd.openFile(io, path, .{});
-    defer archive.close(io);
-
-    var read_buffer: [64 * 1024]u8 = undefined;
-    var reader = archive.reader(io, &read_buffer);
-
-    if (builtin.os.tag == .windows) {
-        try std.zip.extract(dir, &reader, .{ .allow_backslashes = true });
-    } else {
-        var inflate_buffer: [std.compress.flate.max_window_len]u8 = undefined;
-        var gzip: std.compress.flate.Decompress = .init(&reader.interface, .gzip, &inflate_buffer);
-        try std.tar.extract(io, dir, &gzip.reader, .{});
-        _ = try gzip.reader.discardRemaining();
-    }
+    var to = try cwd.openDir(io, dst, .{});
+    defer to.close(io);
+    var walker = try from.walk(self.allocator);
+    defer walker.deinit();
+    while (try walker.next(io)) |entry| switch (entry.kind) {
+        .directory => try to.createDirPath(io, entry.path),
+        .file => try from.copyFile(entry.path, to, entry.path, io, .{}),
+        .sym_link => {
+            var buffer: [Io.Dir.max_path_bytes]u8 = undefined;
+            const size = try from.readLink(io, entry.path, &buffer);
+            try to.symLink(io, buffer[0..size], entry.path, .{});
+        },
+        else => return error.UnexpectedRunnerFile,
+    };
 }
 
 pub fn next(q: *Self, arena: std.mem.Allocator) !Job {

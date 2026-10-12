@@ -6,6 +6,10 @@ set -euo pipefail
 
 (cd zig-out/release && sha256sum --check SHASUMS256.txt)
 
+# All targets are built for coverage; publish only supported bundled-runner targets.
+archives=(zig-out/release/hrc-{x86_64,aarch64}-{linux,macos,windows}-"$HRC_VERSION".tar.gz)
+(cd zig-out/release && sha256sum "${archives[@]##*/}" > SHASUMS256.txt)
+
 if [ "$GITHUB_REF" = refs/heads/main ]; then
   tag=dev
   # Move the development tag to the commit used by this build.
@@ -37,13 +41,17 @@ else
   fi
 fi
 
-gh release upload "$tag" zig-out/release/*.tar.gz zig-out/release/SHASUMS256.txt --clobber
+gh release upload "$tag" "${archives[@]}" zig-out/release/SHASUMS256.txt --clobber
 
 if [ "$tag" = dev ]; then
   # Versioned filenames change on every run; retain only this build's assets.
   gh release view "$tag" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/hrc-assets.txt"
   while IFS= read -r asset; do
-    if [ ! -f "zig-out/release/$asset" ]; then gh release delete-asset "$tag" "$asset" --yes; fi
+    keep=no
+    for published in "${archives[@]}" zig-out/release/SHASUMS256.txt; do
+      if [ "$asset" = "${published##*/}" ]; then keep=yes; break; fi
+    done
+    if [ "$keep" = no ]; then gh release delete-asset "$tag" "$asset" --yes; fi
   done < "$RUNNER_TEMP/hrc-assets.txt"
 else
   gh release edit "$tag" --draft=false

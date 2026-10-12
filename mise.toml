@@ -5,7 +5,9 @@
 lockfile = true
 
 [tools]
-"pipx:reuse" = "6.2.0"
 shellcheck = "0.11.0"
+"pipx:reuse" = "6.2.0"
+
 uv = "0.12.5"
 zig = "0.17"
+dotnet = "8.0.425"

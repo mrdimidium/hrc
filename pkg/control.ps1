@@ -76,7 +76,7 @@ if ($Action -eq 'remove') {
     return
 }
 
-foreach ($file in @('hrc.exe', 'control.ps1', 'TARGET', 'pkg/hrc.zon', 'pkg/services/hrc.winsw.xml')) {
+foreach ($file in @('hrc.exe', 'control.ps1', 'TARGET', 'runner/VERSION', 'runner/LICENSE', 'runner/bin/Runner.Listener.exe', 'runner/bin/Runner.Worker.exe', 'runner/bin/hashFiles/index.js', 'runner/externals/node24/bin/node.exe', 'pkg/hrc.zon', 'pkg/services/hrc.winsw.xml')) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $file) -PathType Leaf)) {
         throw "Incomplete archive: missing $file"
     }
@@ -88,6 +88,16 @@ if (-not $Staging) {
     if (-not $machine) { $machine = $env:PROCESSOR_ARCHITECTURE }
     $arch = switch ($machine) { 'AMD64' { 'x86_64' }; 'ARM64' { 'aarch64' }; default { throw "Unsupported architecture: $machine" } }
     if ($target -ne "$arch-windows") { throw "Archive target $target does not match $arch-windows" }
+}
+$runnerVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'runner/VERSION') -Raw).Trim()
+if ($runnerVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Invalid bundled runner version.' }
+$runnerBin = Join-Path $DataRoot 'state/bin'
+$runner = Join-Path $runnerBin "github-bundled-$runnerVersion"
+if (Test-Path -LiteralPath $runner) {
+    if (-not (Test-Path -LiteralPath (Join-Path $runner '.complete') -PathType Leaf) -or
+        (Get-Content -LiteralPath (Join-Path $runner 'VERSION') -Raw).Trim() -ne $runnerVersion) {
+        throw "Incomplete runner installation: $runner"
+    }
 }
 if (-not $WinSWPath) { $WinSWPath = $wrapper }
 if (-not (Test-Path -LiteralPath $WinSWPath -PathType Leaf)) { throw 'Supply -WinSWPath pointing to a verified WinSW executable.' }
@@ -120,6 +130,21 @@ if (-not $Staging) {
 foreach ($file in @('hrc.exe', 'control.ps1', 'TARGET')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $InstallRoot $file) -Force
 }
+# Retain every published version, including an existing installation of this version.
+if (-not (Test-Path -LiteralPath $runner)) {
+    [void](New-Item -ItemType Directory -Path $runnerBin -Force)
+    $temporaryRunner = Join-Path $runnerBin (".install-" + [Guid]::NewGuid().ToString('N'))
+    try {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'runner') -Destination $temporaryRunner -Recurse
+        New-Item -ItemType File -Path (Join-Path $temporaryRunner '.complete') | Out-Null
+        Move-Item -LiteralPath $temporaryRunner -Destination $runner
+    } finally {
+        if (Test-Path -LiteralPath $temporaryRunner) { Remove-Item -LiteralPath $temporaryRunner -Recurse -Force }
+    }
+}
+# Record the selected version after its installation is complete.
+$versionFile = Join-Path $runnerBin 'VERSION'
+[IO.File]::WriteAllText($versionFile, $runnerVersion + "`n", (New-Object Text.UTF8Encoding($false)))
 if ($WinSWPath -ne $wrapper) { Copy-Item -LiteralPath $WinSWPath -Destination $wrapper -Force }
 if (-not (Test-Path -LiteralPath $config)) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'pkg/hrc.zon') -Destination $config

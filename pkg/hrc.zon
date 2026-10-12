@@ -5,14 +5,13 @@
     // Stable identity of this host.
     .id = "build-01",
     // Paths are relative to the service working directory on each OS.
-    // Persistent runner binaries, downloaded once and reused.
+    // Versioned runner installations, retained across upgrades.
     .bindir = "bin",
     // Per-job workspaces, currently owned by the controller account.
     .rundir = "jobs",
     .groups = .{
         .{
             .github = .{
-                .version = "2.338.0",
                 .url = "https://github.com/example-org",
                 .name = "github-builds",
                 .labels = .{ "linux", "X64" },

@@ -79,6 +79,29 @@ if [ -f "$payload/INIT" ]; then
     }
 fi
 
+case $target in
+    x86_64-linux|aarch64-linux|x86_64-macos|aarch64-macos)
+        for file in VERSION LICENSE bin/Runner.Listener bin/Runner.Worker bin/hashFiles/index.js externals/node24/bin/node; do
+            [ -r "$bundle/runner/$file" ] || {
+                echo "hrc: incomplete release archive: missing runner/$file" >&2; exit 1
+            }
+        done
+        ;;
+esac
+runner_version=""
+if [ -d "$bundle/runner" ]; then
+    IFS= read -r runner_version < "$bundle/runner/VERSION"
+    if ! expr "$runner_version" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null; then
+        echo 'hrc: invalid bundled runner version' >&2; exit 1
+    fi
+    runner_bin="$hrc_state_dir/bin"
+    runner=$(hrc_path "$runner_bin/github-bundled-$runner_version")
+    if [ -e "$runner" ] || [ -L "$runner" ]; then
+        [ -f "$runner/.complete" ] && [ "$(cat "$runner/VERSION")" = "$runner_version" ] || {
+            echo "hrc: incomplete runner installation: $runner" >&2; exit 1
+        }
+    fi
+fi
 sh "$bundle/pkg/scripts/preinstall.sh" install
 hrc_install_dir 0755 root "$hrc_admin_group" "$hrc_prefix/bin"
 hrc_install_dir 0755 root "$hrc_admin_group" "$hrc_payload"
@@ -86,6 +109,27 @@ hrc_install_dir 0755 root "$hrc_admin_group" "$hrc_payload/pkg"
 hrc_install_dir 0755 root "$hrc_admin_group" "$hrc_payload/pkg/scripts"
 hrc_install_dir 0755 root "$hrc_admin_group" "$(dirname "$hrc_service")"
 
+# Publish a writable versioned installation; never replace a runner in use.
+if [ -n "$runner_version" ]; then
+    hrc_install_dir 0700 hrc hrc "$runner_bin"
+    if [ ! -e "$runner" ]; then
+        runner_temporary="$runner.install.$$"
+        trap 'rm -rf "$runner_temporary"' 0
+        trap 'exit 1' 1 2 15
+        mkdir "$runner_temporary"
+        cp -R "$bundle/runner/." "$runner_temporary/"
+        : > "$runner_temporary/.complete"
+        chmod -R u=rwX,go= "$runner_temporary"
+        if ! hrc_staging; then chown -R hrc:hrc "$runner_temporary"; fi
+        mv "$runner_temporary" "$runner"
+        trap - 0 1 2 15
+    fi
+    # Record the selected version after its installation is complete.
+    runner_version_file=$(hrc_path "$runner_bin/VERSION")
+    printf '%s\n' "$runner_version" > "$runner_version_file"
+    chmod 0600 "$runner_version_file"
+    if ! hrc_staging; then chown hrc:hrc "$runner_version_file"; fi
+fi
 hrc_install_file 0755 "$bundle/control" "$hrc_payload/control"
 hrc_install_file 0644 "$bundle/TARGET" "$hrc_payload/TARGET"
 for hook in common preinstall postinstall preremove postremove; do

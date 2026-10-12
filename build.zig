@@ -5,6 +5,8 @@ const std = @import("std");
 
 const BuildMode = enum { release, dev, snapshot };
 
+const runner_version = std.mem.trim(u8, @embedFile("vendor/actions-runner/src/runnerversion"), " \n\r");
+
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -60,6 +62,7 @@ pub fn build(b: *std.Build) !void {
 
     const options = b.addOptions();
     options.addOption(std.SemanticVersion, "version", version);
+    options.addOption([]const u8, "runner_version", runner_version);
 
     const exe = b.addExecutable(.{
         .name = "hrc",
@@ -81,6 +84,10 @@ pub fn build(b: *std.Build) !void {
     const files = b.addWriteFiles();
     files.mode = .tmp;
     const packaged_binary = files.addCopyFile(exe.getEmittedBin(), binary);
+    const runner_payload = buildRunner(b, target);
+    if (runner_payload) |runner| {
+        _ = files.addCopyDirectory(runner, "runner", .{});
+    }
     for ([_][]const u8{ "README.md", "LICENSE", "pkg/hrc.zon", "LICENSES/BSD-3-Clause.txt", "LICENSES/CC-BY-4.0.txt" }) |file|
         _ = files.addCopyFile(b.path(file), file);
     _ = files.add("TARGET", b.fmt("{s}-{s}\n", .{ @tagName(target.result.cpu.arch), @tagName(target.result.os.tag) }));
@@ -111,6 +118,14 @@ pub fn build(b: *std.Build) !void {
         const permissions = b.addSystemCommand(&.{ "chmod", "0755" });
         permissions.addFileArg(packaged_binary);
         permissions.addFileArg(control);
+        if (runner_payload != null) {
+            for ([_][]const u8{ "bin/Runner.Listener", "bin/Runner.Worker", "externals/node20/bin/node", "externals/node24/bin/node" }) |file|
+                permissions.addFileArg(files.getDirectory().path(b, b.fmt("runner/{s}", .{file})));
+            if (target.result.os.tag == .linux and target.result.cpu.arch == .x86_64) {
+                permissions.addFileArg(files.getDirectory().path(b, "runner/externals/node20_alpine/bin/node"));
+                permissions.addFileArg(files.getDirectory().path(b, "runner/externals/node24_alpine/bin/node"));
+            }
+        }
         executable_permissions = permissions;
     }
 
@@ -154,4 +169,90 @@ fn git(b: *std.Build, argv: []const []const u8) ?[]const u8 {
     var code: u8 = undefined;
     const out = b.runAllowFail(argv, &code, .ignore) catch return null;
     return std.mem.trim(u8, out, " \n\r\t");
+}
+
+/// Publish only Listener/Worker; every target gets isolated, mutable source copies.
+fn buildRunner(b: *std.Build, target: std.Build.ResolvedTarget) ?std.Build.LazyPath {
+    const arch = switch (target.result.cpu.arch) {
+        .x86_64 => "x64",
+        .aarch64 => "arm64",
+        else => return null,
+    };
+
+    const platform, const os = switch (target.result.os.tag) {
+        .linux => .{ "Linux", "linux" },
+        .windows => .{ "Windows", "win" },
+        .macos => .{ "OSX", "osx" },
+        else => return null,
+    };
+
+    // The controller ABI does not select the .NET runtime; Linux payloads use glibc.
+    const rid = b.fmt("{s}-{s}", .{ os, arch });
+    const windows = target.result.os.tag == .windows;
+
+    const payload = b.addWriteFiles();
+
+    var available = true;
+    inline for (.{ "20", "24" }) |major| {
+        const name = b.fmt("node{s}_{s}_{s}", .{ major, @tagName(target.result.os.tag), arch });
+        if (b.lazyDependency(name, .{})) |node| {
+            const binary = if (windows) "node.exe" else "bin/node";
+            _ = payload.addCopyFile(node.path(binary), b.fmt("externals/node{s}/bin/{s}", .{ major, if (windows) "node.exe" else "node" }));
+            _ = payload.addCopyFile(node.path("LICENSE"), b.fmt("externals/node{s}/LICENSE", .{major}));
+        } else available = false;
+        if (target.result.os.tag == .linux and target.result.cpu.arch == .x86_64) {
+            if (b.lazyDependency(b.fmt("node{s}_alpine_x64", .{major}), .{})) |node| {
+                _ = payload.addCopyFile(node.path("bin/node"), b.fmt("externals/node{s}_alpine/bin/node", .{major}));
+                _ = payload.addCopyFile(node.path("LICENSE"), b.fmt("externals/node{s}_alpine/LICENSE", .{major}));
+            } else available = false;
+        }
+    }
+
+    // Zig fetches requested lazy dependencies and reconfigures the build.
+    if (!available) return null;
+
+    const commit = git(b, &.{ "git", "-C", "vendor/actions-runner", "rev-parse", "HEAD" }) orelse "unknown";
+    inline for (.{ "Listener", "Worker" }) |component| {
+        const workspace = b.addTempFiles();
+        const source = workspace.addCopyDirectory(b.path("vendor/actions-runner/src"), "src", .{});
+        const constants = b.addMutateFiles(source);
+        _ = constants.add("Runner.Sdk/BuildConstants.cs", b.fmt(
+            \\namespace GitHub.Runner.Sdk {{
+            \\    public static class BuildConstants {{
+            \\        public static class Source {{ public static readonly string CommitHash = "{s}"; }}
+            \\        public static class RunnerPackage {{
+            \\            public static readonly string Version = "{s}";
+            \\            public static readonly string PackageName = "{s}";
+            \\        }}
+            \\    }}
+            \\}}
+            \\
+        , .{ commit, rid, runner_version }));
+
+        const run = b.addSystemCommand(&.{ "dotnet", "publish" });
+        run.setCwd(constants.getDirectory());
+
+        run.setEnvironmentVariable("DOTNET_NOLOGO", "1");
+        run.setEnvironmentVariable("DOTNET_CLI_TELEMETRY_OPTOUT", "1");
+
+        run.addArg(b.fmt("Runner.{s}/Runner.{s}.csproj", .{ component, component }));
+        run.addArgs(&.{ "-c", "Release", "-r", rid, "--self-contained", "true" });
+        run.addArgs(&.{ b.fmt("-p:BUILD_OS={s}", .{platform}), b.fmt("-p:PackageRuntime={s}", .{rid}), b.fmt("-p:Version={s}", .{runner_version}), b.fmt("-p:RuntimeIdentifiers={s}", .{rid}), "-p:PublishReadyToRun=false", "-p:PublishReadyToRunComposite=false", "-o" });
+
+        // MSBuild writes bin/obj beside project files, so never mutate a shared cache input.
+        run.has_side_effects = true;
+
+        const published = run.addOutputDirectoryArg(b.fmt("publish-{s}", .{component}));
+        _ = payload.addCopyDirectory(published, "bin", .{ .exclude_extensions = &.{".pdb"} });
+    }
+
+    _ = payload.addCopyDirectory(b.path("vendor/actions-runner/src/Misc/layoutbin/hashFiles"), "bin/hashFiles", .{});
+
+    if (target.result.os.tag == .macos)
+        _ = payload.addCopyFile(b.path("vendor/actions-runner/src/Misc/layoutbin/macos-run-invoker.js"), "bin/macos-run-invoker.js");
+
+    _ = payload.add("VERSION", b.fmt("{s}\n", .{runner_version}));
+    _ = payload.addCopyFile(b.path("vendor/actions-runner/LICENSE"), "LICENSE");
+
+    return payload.getDirectory();
 }

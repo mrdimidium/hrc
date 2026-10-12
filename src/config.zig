@@ -11,7 +11,10 @@ pub fn Config(comptime Provider: type) type {
         /// Stable host identity used as the listener owner and runner name prefix.
         id: []const u8,
 
-        /// Persistent directory for downloaded runner binaries, grouped by provider and version.
+        /// Optional packaged runner location; defaults to the installed payload.
+        runnerdir: ?[]const u8 = null,
+
+        /// Persistent writable runner installations, grouped by provider and version.
         bindir: []const u8 = "./hrc/bin",
 
         /// Parent directory for temporary per-job workspaces.

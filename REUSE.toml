@@ -5,9 +5,10 @@ version = 1
 
 [[annotations]]
 path = [
-  ".mailmap",
-  ".gitignore",
   ".gitattributes",
+  ".gitignore",
+  ".gitmodules",
+  ".mailmap",
   "mise.lock",
 ]
 precedence = "aggregate"

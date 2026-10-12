@@ -13,6 +13,35 @@ shellcheck -x -P SCRIPTDIR \
   pkg/services/hrc.alpine \
   pkg/services/hrc.freebsd
 
+# Fetch each archive in a separate process to avoid reusing idle connections.
+# --save-exact also prepares Zig's local package layout; use a temporary manifest.
+fetch_dir=$(mktemp -d)
+trap 'rm -rf "$fetch_dir"' EXIT
+cp build.zig.zon "$fetch_dir/build.zig.zon"
+touch "$fetch_dir/build.zig"
+awk '
+  /\.url =/ { split($0, fields, "\""); url = fields[2] }
+  /\.hash =/ && url != "" {
+    split($0, fields, "\""); print url, fields[2]; url = ""
+  }
+' build.zig.zon | while read -r url expected; do
+  echo "Fetching $url"
+
+  (cd "$fetch_dir" && zig fetch --save-exact=archive "$url")
+
+  actual=$(awk '
+    $1 == ".archive" { found = 1 }
+    found && /\.hash =/ { split($0, fields, "\""); print fields[2]; exit }
+  ' "$fetch_dir/build.zig.zon")
+
+  if [ "$actual" != "$expected" ]; then
+    echo "Package hash mismatch for $url: expected $expected, got $actual" >&2
+    exit 1
+  fi
+done
+rm -rf "$fetch_dir"
+trap - EXIT
+
 for target in \
   x86_64-linux-musl aarch64-linux-musl riscv64-linux-musl s390x-linux loongarch64-linux powerpc64le-linux \
   x86_64-freebsd aarch64-freebsd \

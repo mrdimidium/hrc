@@ -65,9 +65,9 @@ const Provider = union(enum) {
         }
     }
 
-    fn download(self: *Provider, dir: []const u8) !void {
+    fn install(self: *Provider, source: []const u8, dir: []const u8) !void {
         switch (self.*) {
-            inline else => |*backend| try backend.download(dir),
+            inline else => |*backend| try backend.install(source, dir),
         }
     }
 
@@ -266,6 +266,8 @@ fn prepareRunner(self: *Self, provider: *Provider) ![]const u8 {
         inline else => |backend| backend.config.version,
     };
     _ = try std.SemanticVersion.parse(version);
+    if (!std.mem.eql(u8, version, @import("build_options").runner_version))
+        return error.RunnerVersionMismatch;
 
     const cwd = Io.Dir.cwd();
     _ = try cwd.createDirPathStatus(self.io, self.config.bindir, if (builtin.os.tag == .windows) .default_dir else .fromMode(0o700));
@@ -276,7 +278,7 @@ fn prepareRunner(self: *Self, provider: *Provider) ![]const u8 {
     var root_buffer: [Io.Dir.max_path_bytes]u8 = undefined;
     const root = root_buffer[0..try cwd.realPathFile(self.io, self.config.bindir, &root_buffer)];
 
-    const name = try std.fmt.allocPrint(self.allocator, "{s}-{s}", .{ @tagName(std.meta.activeTag(provider.*)), version });
+    const name = try std.fmt.allocPrint(self.allocator, "{s}-bundled-{s}", .{ @tagName(std.meta.activeTag(provider.*)), version });
     defer self.allocator.free(name);
 
     const path = try std.fs.path.join(self.allocator, &.{ root, name });
@@ -295,8 +297,22 @@ fn prepareRunner(self: *Self, provider: *Provider) ![]const u8 {
     const staging = try std.fmt.allocPrint(self.allocator, "{s}-install-{x}", .{ path, &random });
     defer self.allocator.free(staging);
 
-    // download owns creation and cleanup on failure; successful staging is ours.
-    try provider.download(staging);
+    const source = if (self.config.runnerdir) |runner_path| try self.allocator.dupe(u8, runner_path) else blk: {
+        const executable_dir = try std.process.executableDirPathAlloc(self.io, self.allocator);
+        defer self.allocator.free(executable_dir);
+        // Extracted archives and Windows installations keep runner beside hrc.
+        const adjacent = try std.fs.path.join(self.allocator, &.{ executable_dir, "runner" });
+        if (cwd.access(self.io, adjacent, .{})) |_| break :blk adjacent else |err| switch (err) {
+            error.FileNotFound => self.allocator.free(adjacent),
+            else => {
+                self.allocator.free(adjacent);
+                return err;
+            },
+        }
+        break :blk try std.fs.path.join(self.allocator, &.{ executable_dir, "..", "share", "hrc", "runner" });
+    };
+    defer self.allocator.free(source);
+    try provider.install(source, staging);
     defer cwd.deleteTree(self.io, staging) catch {};
     {
         var installed = try cwd.openDir(self.io, staging, .{});
@@ -304,7 +320,18 @@ fn prepareRunner(self: *Self, provider: *Provider) ![]const u8 {
         const complete = try installed.createFile(self.io, ".complete", .{ .exclusive = true });
         complete.close(self.io);
     }
-    try cwd.renamePreserve(staging, cwd, path, self.io);
+    if (builtin.os.tag == .freebsd) {
+        // Zig's FreeBSD renamePreserve fallback hard-links the source, which
+        // cannot work for directories. Completed installations are nonempty,
+        // so rename also refuses to replace one published concurrently.
+        if (cwd.access(self.io, path, .{})) |_| return error.PathAlreadyExists else |err| switch (err) {
+            error.FileNotFound => {},
+            else => return err,
+        }
+        try cwd.rename(staging, cwd, path, self.io);
+    } else {
+        try cwd.renamePreserve(staging, cwd, path, self.io);
+    }
     return path;
 }
 
@@ -363,15 +390,15 @@ comptime {
     for (@typeInfo(Provider).@"union".field_types) |Backend| {
         const initialize: *const fn (*api.Api, std.mem.Allocator, Backend.Config, []const u8, []const u8) anyerror!Backend = Backend.init;
         const destroy: *const fn (*Backend) void = Backend.deinit;
-        const download: *const fn (*Backend, []const u8) anyerror!void = Backend.download;
+        const install: *const fn (*Backend, []const u8, []const u8) anyerror!void = Backend.install;
         const next: *const fn (*Backend, std.mem.Allocator) anyerror!Backend.Job = Backend.next;
         const execute: *const fn (*Backend, Backend.Job, []const u8, []const u8) anyerror!std.process.Child.Term = Backend.run;
         const finish: *const fn (*Backend, Backend.Job, bool) anyerror!void = Backend.finish;
-        _ = .{ initialize, destroy, download, next, execute, finish };
+        _ = .{ initialize, destroy, install, next, execute, finish };
     }
 }
 
-test "runner backends reject invalid and unknown release versions" {
+test "runner backends reject invalid and mismatched bundled versions" {
     var transport = api.Api.init(std.testing.io, std.testing.allocator);
     defer transport.deinit();
     inline for (@typeInfo(Provider).@"union".field_types) |Backend| {
@@ -384,9 +411,9 @@ test "runner backends reject invalid and unknown release versions" {
         };
         var provider = try Backend.init(&transport, std.testing.allocator, cfg, "host", "token");
         defer provider.deinit();
-        try std.testing.expectError(error.InvalidVersion, provider.download("unused"));
+        try std.testing.expectError(error.InvalidVersion, provider.install("unused", "unused"));
         provider.config.version = "0.0.0";
-        try std.testing.expectError(error.UnknownVersion, provider.download("unused"));
+        try std.testing.expectError(error.RunnerVersionMismatch, provider.install("unused", "unused"));
     }
 }
 
@@ -500,22 +527,22 @@ test "Select receives a ready queue while another is blocked in HTTP and cancels
     queues[0].github.session = null;
 }
 
-test "cached runner serves repeated jobs without downloading or retaining workspaces" {
+test "cached runner serves repeated jobs without retaining workspaces" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
     const io = std.testing.io;
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
-    try tmp.dir.createDirPath(io, "github-2.338.0/bin");
-    try tmp.dir.writeFile(io, .{ .sub_path = "github-2.338.0/.complete", .data = "" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "github-2.338.0/bin/Runner.Listener", .data =
+    try tmp.dir.createDirPath(io, "packaged/bin");
+    try tmp.dir.writeFile(io, .{ .sub_path = "packaged/VERSION", .data = "0.0.0\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "packaged/bin/Runner.Listener", .data =
         \\#!/bin/sh
         \\[ "$1" = run ] && [ "$2" = --jitconfig ] && [ ! -d bin ] || exit 98
         \\touch job-output
         \\exit 0
         \\
     });
-    const file = try tmp.dir.openFile(io, "github-2.338.0/bin/Runner.Listener", .{});
+    const file = try tmp.dir.openFile(io, "packaged/bin/Runner.Listener", .{});
     defer file.close(io);
     try file.setPermissions(io, .fromMode(0o755));
     const root = try @import("testing.zig").tmpPath(tmp);
@@ -524,20 +551,38 @@ test "cached runner serves repeated jobs without downloading or retaining worksp
     defer allocator.free(workdir);
     var environ = std.process.Environ.Map.init(allocator);
     defer environ.deinit();
-    var daemon = init(io, allocator, &environ, .{ .id = "host", .bindir = root, .rundir = workdir, .groups = &.{} });
+    const source = try std.fs.path.join(allocator, &.{ root, "packaged" });
+    defer allocator.free(source);
+    try tmp.dir.symLink(io, "Runner.Listener", "packaged/bin/listener-link", .{});
+    var daemon = init(io, allocator, &environ, .{ .id = "host", .runnerdir = source, .bindir = root, .rundir = workdir, .groups = &.{} });
     var transport = api.Api.init(io, allocator);
     defer transport.deinit();
     var provider: Provider = .{ .github = try github.init(&transport, allocator, .{
-        .version = "2.338.0",
+        .version = @import("build_options").runner_version,
         .runner_group_id = 1,
         .url = "https://github.com/acme",
         .name = "build",
         .labels = &.{"linux"},
     }, "host", "token") };
     defer provider.deinit();
+    try std.testing.expectError(error.RunnerVersionMismatch, daemon.prepareRunner(&provider));
+    try tmp.dir.writeFile(io, .{ .sub_path = "packaged/VERSION", .data = @import("build_options").runner_version });
+    const occupied = try std.fmt.allocPrint(allocator, "github-bundled-{s}", .{@import("build_options").runner_version});
+    defer allocator.free(occupied);
+    try tmp.dir.createDir(io, occupied, .default_dir);
+    try std.testing.expectError(error.PathAlreadyExists, daemon.prepareRunner(&provider));
+    // An incomplete directory must survive the failed publication untouched.
+    try tmp.dir.deleteDir(io, occupied);
     const installation = try daemon.prepareRunner(&provider);
     defer allocator.free(installation);
     try std.testing.expect(std.fs.path.isAbsolute(installation));
+    var installed = try Io.Dir.cwd().openDir(io, installation, .{});
+    defer installed.close(io);
+    var link_buffer: [128]u8 = undefined;
+    const link_size = try installed.readLink(io, "bin/listener-link", &link_buffer);
+    try std.testing.expectEqualStrings("Runner.Listener", link_buffer[0..link_size]);
+    // Cache reuse must not require the original payload to remain accessible.
+    try tmp.dir.deleteTree(io, "packaged");
     const reused = try daemon.prepareRunner(&provider);
     defer allocator.free(reused);
     try std.testing.expectEqualStrings(installation, reused);
@@ -553,7 +598,7 @@ test "cached runner serves repeated jobs without downloading or retaining worksp
         defer jobs.close(io);
         var entries = jobs.iterate();
         try std.testing.expectEqual(@as(?Io.Dir.Entry, null), try entries.next(io));
-        try tmp.dir.access(io, "github-2.338.0/bin/Runner.Listener", .{});
-        try std.testing.expectError(error.FileNotFound, tmp.dir.access(io, "github-2.338.0/.credentials", .{}));
+        try installed.access(io, "bin/Runner.Listener", .{});
+        try std.testing.expectError(error.FileNotFound, installed.access(io, ".credentials", .{}));
     }
 }

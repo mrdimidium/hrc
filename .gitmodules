@@ -1,0 +1,3 @@
+[submodule "vendor/actions-runner"]
+	path = vendor/actions-runner
+	url = https://github.com/actions/runner.git

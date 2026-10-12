@@ -23,32 +23,77 @@ each GitHub runner handles one job at a time, requiring multiple instances.
 
 ## Installation
 
-Download the archive for your OS/architecture, verify it against
-`SHASUMS256.txt`, and extract it into an empty directory.
-
-On Linux, macOS and FreeBSD:
+macOS / Linux:
 
 ```sh
+case $(uname -s) in
+    Darwin) os=macos ;;
+    Linux) os=linux ;;
+esac
+case $(uname -m) in
+    x86_64) arch=x86_64 ;;
+    arm64|aarch64) arch=aarch64 ;;
+esac
+
+gh release download --repo mrdimidium/hrc --pattern "hrc-$arch-$os-*.tar.gz" --pattern SHASUMS256.txt
+set -- hrc-"$arch"-"$os"-*.tar.gz
+archive=$1
+shasum -a 256 "$archive"
+
+# Compare the checksum with SHASUMS256.txt.
+gh attestation verify "$archive" --repo mrdimidium/hrc
+
+mkdir hrc-install
+tar -xzf "$archive" -C hrc-install
+
+cd hrc-install
 sudo ./control install
+
+# Configure hrc.zon and provider secrets, then start the service using the printed commands.
+
+# Upgrade: run from a newly extracted release archive.
+sudo ./control install
+
+# Uninstall (configuration, secrets, runner versions and build data are retained).
+sudo ./control remove
 ```
 
-Follow the printed instructions to configure `hrc.zon` and start the service.
-Linux supports systemd/OpenRC.
-
-On Windows, download [WinSW 2.x](https://github.com/winsw/winsw/tree/v2)
-separately and run PowerShell as Administrator:
+Windows (PowerShell as Administrator):
 
 ```powershell
-.\control.ps1 install -WinSWPath C:\Downloads\WinSW-x64.exe
-# Configure %ProgramData%\hrc\hrc.zon and provider secrets first.
-Start-Service hrc
-```
+$arch = switch ($machine) { AMD64 { 'x86_64' } ARM64 { 'aarch64' } }
+$machine = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 
-Run `install` from a newer archive to upgrade, or `remove` to uninstall.
-Existing configuration is preserved; removal also retains secrets and build
-data.
+gh release download --repo mrdimidium/hrc --pattern "hrc-$arch-windows-*.tar.gz" --pattern SHASUMS256.txt
+
+$archive = (Get-Item "hrc-$arch-windows-*.tar.gz").FullName
+Get-FileHash $archive -Algorithm SHA256
+
+# Compare the checksum with SHASUMS256.txt.
+gh attestation verify $archive --repo mrdimidium/hrc
+
+New-Item -ItemType Directory hrc-install
+tar -xzf $archive -C hrc-install
+
+Set-Location hrc-install
+
+# Download WinSW 2.x: https://github.com/winsw/winsw/tree/v2
+.\control.ps1 install -WinSWPath C:\Downloads\WinSW-x64.exe
+
+# Configure %ProgramData%\hrc\hrc.zon and provider secrets.
+Start-Service hrc
+
+# Upgrade: run from a newly extracted release archive.
+.\control.ps1 install -WinSWPath C:\Downloads\WinSW-x64.exe
+
+# Uninstall (configuration, secrets, runner versions and build data are retained).
+.\control.ps1 remove
+```
 
 ## License
 
 Source code is licensed under [BSD-3-Clause](./LICENSE). Documentation is
 licensed under [CC-BY-4.0](./LICENSES/CC-BY-4.0.txt).
+
+The bundled GitHub runner is MIT licensed; its license and .NET dependency
+notices are included in the runner payload.

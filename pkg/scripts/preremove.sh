@@ -52,4 +52,4 @@ case $hrc_os in
     *) echo 'hrc: unsupported OS' >&2; exit 1 ;;
 esac
 
-# Accounts, config, tokens, downloaded runners, workspaces and logs are retained.
+# Accounts, config, tokens, writable runner copies, workspaces and logs are retained.
