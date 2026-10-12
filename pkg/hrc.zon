@@ -4,10 +4,11 @@
 .{
     // Stable identity of this host.
     .id = "build-01",
+    // Paths are relative to the service working directory on each OS.
     // Persistent runner binaries, downloaded once and reused.
-    .bindir = "/var/lib/hrc/bin",
-    // Build-account workspace. Requires controller support for hrc-build.
-    .rundir = "/var/lib/hrc-build/jobs",
+    .bindir = "bin",
+    // Per-job workspaces, currently owned by the controller account.
+    .rundir = "jobs",
     .groups = .{
         .{
             .github = .{
@@ -17,7 +18,7 @@
                 .labels = .{ "linux", "X64" },
                 .runner_group_id = 1,
                 // Read a PAT with permission to manage runners from the environment.
-                .token_env = "GITHUB_TOKEN",
+                .token = .{ .env = "GITHUB_TOKEN" },
             },
         },
         .{
@@ -27,7 +28,7 @@
                 .name = "forgejo-builds",
                 .labels = .{"linux"},
                 .scope = .{ .org = "example-org" },
-                .token_env = "FORGEJO_TOKEN",
+                .token = .{ .env = "FORGEJO_TOKEN" },
             },
         },
     },

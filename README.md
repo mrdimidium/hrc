@@ -22,7 +22,34 @@ Forgejo supports concurrent jobs, with caveats.
 > Shared, stateful runners are suitable only for private use with trusted code,
 > since builds share the host's environment and persistent state.
 
+## Installation
+
+Download the archive for your OS/architecture, verify it against
+`SHASUMS256.txt`, and extract it into an empty directory.
+
+On Linux, macOS and BSD:
+
+```sh
+sudo ./control install
+```
+
+Follow the printed instructions to configure `hrc.zon` and start the service.
+Linux supports systemd/OpenRC; NetBSD requires pkgsrc's `daemonize`.
+BSD hosts support Forgejo only; remove the GitHub example group.
+
+On Windows, download [WinSW 2.x](https://github.com/winsw/winsw/tree/v2)
+separately and run PowerShell as Administrator:
+
+```powershell
+.\control.ps1 install -WinSWPath C:\Downloads\WinSW-x64.exe
+# Configure %ProgramData%\hrc\hrc.zon and provider secrets first.
+Start-Service hrc
+```
+
+Run `install` from a newer archive to upgrade, or `remove` to uninstall.
+Existing configuration is preserved; removal also retains secrets and build data.
+
 ## License
 
-Source code is licensed under [BSD-3-Clause](./LICENSE). Documentation is
-licensed under [CC-BY-4.0](./LICENSES/CC-BY-4.0.txt).
+Source code is licensed under [BSD-3-Clause](./LICENSE).
+Documentation is licensed under [CC-BY-4.0](./LICENSES/CC-BY-4.0.txt).

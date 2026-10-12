@@ -35,13 +35,29 @@ const Provider = union(enum) {
         host: []const u8,
     ) !Provider {
         return switch (cfg) {
-            inline else => |settings, tag| @unionInit(Provider, @tagName(tag), try @FieldType(Provider, @tagName(tag)).init(
-                transport,
-                allocator,
-                settings,
-                host,
-                environ.get(settings.token_env) orelse return error.MissingToken,
-            )),
+            inline else => |settings, tag| blk: {
+                const bytes = try settings.token.load(transport.client.io, allocator, environ);
+                defer {
+                    std.crypto.secureZero(u8, bytes);
+                    allocator.free(bytes);
+                }
+                // Text token files may end in LF or CRLF; other bytes are significant.
+                const token = if (std.mem.endsWith(u8, bytes, "\r\n"))
+                    bytes[0 .. bytes.len - 2]
+                else if (std.mem.endsWith(u8, bytes, "\n"))
+                    bytes[0 .. bytes.len - 1]
+                else
+                    bytes;
+                if (token.len == 0 or std.mem.indexOfAny(u8, token, "\r\n") != null)
+                    return error.InvalidToken;
+                break :blk @unionInit(Provider, @tagName(tag), try @FieldType(Provider, @tagName(tag)).init(
+                    transport,
+                    allocator,
+                    settings,
+                    host,
+                    token,
+                ));
+            },
         };
     }
 
@@ -83,6 +99,32 @@ const Provider = union(enum) {
 };
 
 pub const Config = config_schema.Config(Provider.Config);
+
+test "providers retain resolved tokens and reject malformed tokens" {
+    const allocator = std.testing.allocator;
+    var environ = std.process.Environ.Map.init(allocator);
+    defer environ.deinit();
+    try environ.put("TOKEN", "secret\r\n");
+    var transport = api.Api.init(std.testing.io, allocator);
+    defer transport.deinit();
+    const configs = [_]Provider.Config{
+        .{ .github = .{ .version = "2.338.0", .name = "github", .url = "https://github.com/org", .labels = &.{"linux"}, .runner_group_id = 1, .token = .{ .env = "TOKEN" } } },
+        .{ .forgejo = .{ .version = "13.0.0-zsf", .name = "forgejo", .url = "https://forgejo.example.com", .labels = &.{"linux"}, .token = .{ .@"inline" = "secret\n" } } },
+    };
+    for (configs) |cfg| {
+        var provider = try Provider.init(&transport, allocator, &environ, cfg, "host");
+        defer provider.deinit();
+        switch (provider) {
+            .github => |backend| try std.testing.expectEqualStrings("Bearer secret", backend.authorization),
+            .forgejo => |backend| try std.testing.expectEqualStrings("token secret", backend.authorization),
+        }
+    }
+    for ([_][]const u8{ "", "\n", "token\nextra", "token\n\n", "token\r" }) |token| {
+        var cfg = configs[1];
+        cfg.forgejo.token = .{ .@"inline" = token };
+        try std.testing.expectError(error.InvalidToken, Provider.init(&transport, allocator, &environ, cfg, "host"));
+    }
+}
 
 /// A request owns its arena until the synchronous runner has exited.
 const PreparedJob = struct {

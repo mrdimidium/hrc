@@ -34,8 +34,8 @@ pub const Config = struct {
     /// Scope for job polling and runner registration: user, admin, org, or repo.
     scope: Scope = .user,
 
-    /// Environment variable containing an API token with access to the chosen scope.
-    token_env: []const u8 = "FORGEJO_TOKEN",
+    /// Secret containing an API token with access to the chosen scope.
+    token: @import("secret.zig").Secret = .{ .env = "FORGEJO_TOKEN" },
 
     /// Delay in milliseconds between polls when no matching job is available.
     poll_interval_ms: u32 = 5000,
@@ -79,9 +79,7 @@ const version_checksum = std.StaticStringMap(TripletHashes).initComptime(.{
         .{ "powerpc64le-linux", "ed1fa6dd98f6218bd94b4a154451db55d67adde4b827bdd6def8f063485006a9" },
         .{ "riscv64-linux", "faffa068c0af51a0ca2008d46cdfbeb6506edcaa909c50566f6f7ae2f74d6a26" },
         .{ "s390x-linux", "76cf57e98df5e4f6d4b0ea3e3e8be0f457306e07408872844ce0d3b0ff69232e" },
-        .{ "x86_64-dragonfly", "ba46fffd2853b527ddffc41e23df6d048fa82882a0955029459455389ea7bf21" },
         .{ "x86_64-freebsd", "ea6c2511d53d033bb30f132034560c95cfefd81dcd8dffb66966dec1b04e5479" },
-        .{ "x86_64-illumos", "9a042554e1fb82961845536fdd0e4b6f54c5d66ea37ede0393b65515355d8264" },
         .{ "x86_64-linux", "4277ba9fc9af6b2cd08ace5982875bdea3a2386cdd4250a170a6049183f145e5" },
         .{ "x86_64-netbsd", "1d3ba01432fa920f0a24420d129208ab82f93ada8853eb8286692711b3679cec" },
         .{ "x86_64-openbsd", "469ff987a535d25f18f8708f14cae937433d26e5c64627dd4569b22fafd43869" },
@@ -389,9 +387,9 @@ test "run prepares credentials and workspace and waits for one-job" {
     try std.testing.expect(std.mem.startsWith(u8, workspace, workdir));
 }
 
-test "ZSF release contains hashes for all published platforms" {
+test "ZSF release contains valid hashes for supported platforms" {
     const triplets = version_checksum.get("13.0.0-zsf").?;
-    try std.testing.expectEqual(@as(usize, 17), triplets.values().len);
+    try std.testing.expectEqual(@as(usize, 15), triplets.values().len);
     for (triplets.values()) |hex| {
         var digest: [32]u8 = undefined;
         try std.testing.expectEqual(@as(usize, 32), (try std.fmt.hexToBytes(&digest, hex)).len);

@@ -1,0 +1,111 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+set -eu
+umask 0077
+
+case ${1:-help} in
+    install|remove) action=$1 ;;
+    help|-h|--help)
+        echo 'Usage: control install | remove'
+        echo 'Install from an extracted release; configure hrc.zon before starting the service.'
+        echo 'Remove retains accounts, configuration, secrets and build data.'
+        exit 0
+        ;;
+    *) echo "hrc: unknown action: $1" >&2; exit 1 ;;
+esac
+[ "$#" = 1 ] || { echo 'Usage: control install | remove' >&2; exit 1; }
+
+bundle=$(CDPATH='' cd -P "$(dirname "$0")" && pwd)
+[ -r "$bundle/pkg/scripts/common.sh" ] || {
+    echo 'hrc: run control from an extracted release or its installed location' >&2
+    exit 1
+}
+. "$bundle/pkg/scripts/common.sh"
+hrc_require_root
+payload=$(hrc_path "$hrc_payload")
+
+if [ "$action" = remove ]; then
+    if [ ! -f "$payload/INIT" ]; then
+        echo 'hrc: no installation managed by control was found'
+        exit 0
+    fi
+    IFS= read -r HRC_INIT < "$payload/INIT"
+    export HRC_INIT
+    hrc_select_init
+    sh "$payload/pkg/scripts/preremove.sh" remove
+    rm -f "$(hrc_path "$hrc_binary")" "$(hrc_path "$hrc_service")"
+    sh "$payload/pkg/scripts/postremove.sh" remove
+    for hook in common preinstall postinstall preremove postremove; do
+        rm -f "$payload/pkg/scripts/$hook.sh"
+    done
+    rm -f "$payload/control" "$payload/TARGET" "$payload/INIT"
+    # Remove our empty directories, retaining any administrator-added files.
+    rmdir "$payload/pkg/scripts" "$payload/pkg" "$payload" 2>/dev/null || true
+    echo 'hrc: removed; configuration, secrets and build data were retained'
+    exit 0
+fi
+
+# Validate the complete bundle and platform before stopping services or creating accounts.
+[ -r "$bundle/TARGET" ] || { echo 'hrc: incomplete release archive: missing TARGET' >&2; exit 1; }
+IFS= read -r target < "$bundle/TARGET"
+case $target in
+    *-"$hrc_target_os") ;;
+    *) echo "hrc: archive target $target does not match $hrc_os" >&2; exit 1 ;;
+esac
+if ! hrc_staging; then
+    arch=$(hrc_arch)
+    [ "$target" = "$arch-$hrc_target_os" ] || {
+        echo "hrc: archive target $target does not match $arch-$hrc_target_os" >&2
+        exit 1
+    }
+fi
+hrc_select_init
+export HRC_INIT="$hrc_init"
+for file in hrc control TARGET pkg/hrc.zon \
+    pkg/scripts/common.sh pkg/scripts/preinstall.sh pkg/scripts/postinstall.sh \
+    pkg/scripts/preremove.sh pkg/scripts/postremove.sh "pkg/services/$hrc_service_source"; do
+    [ -f "$bundle/$file" ] && [ -r "$bundle/$file" ] || {
+        echo "hrc: incomplete release archive: missing $file" >&2
+        exit 1
+    }
+done
+if [ -f "$payload/INIT" ]; then
+    IFS= read -r previous_init < "$payload/INIT"
+    [ "$previous_init" = "$hrc_init" ] || {
+        echo 'hrc: remove the previous installation before changing init systems' >&2
+        exit 1
+    }
+fi
+
+sh "$bundle/pkg/scripts/preinstall.sh" install
+hrc_install_dir 0755 root "$hrc_admin_group" "$hrc_prefix/bin"
+hrc_install_dir 0755 root "$hrc_admin_group" "$hrc_payload"
+hrc_install_dir 0755 root "$hrc_admin_group" "$hrc_payload/pkg"
+hrc_install_dir 0755 root "$hrc_admin_group" "$hrc_payload/pkg/scripts"
+hrc_install_dir 0755 root "$hrc_admin_group" "$(dirname "$hrc_service")"
+
+hrc_install_file 0755 "$bundle/control" "$hrc_payload/control"
+hrc_install_file 0644 "$bundle/TARGET" "$hrc_payload/TARGET"
+for hook in common preinstall postinstall preremove postremove; do
+    hrc_install_file 0755 "$bundle/pkg/scripts/$hook.sh" "$hrc_payload/pkg/scripts/$hook.sh"
+done
+printf '%s\n' "$hrc_init" > "$payload/INIT"
+chmod 0644 "$payload/INIT"
+
+# Replace the binary by rename, so a failed copy never truncates an existing binary.
+temporary="$hrc_binary.new.$$"
+trap 'rm -f "$(hrc_path "$temporary")"' 0
+trap 'exit 1' 1 2 15
+hrc_install_file 0755 "$bundle/hrc" "$temporary"
+mv -f "$(hrc_path "$temporary")" "$(hrc_path "$hrc_binary")"
+trap - 0 1 2 15
+hrc_install_file "$hrc_service_mode" "$bundle/pkg/services/$hrc_service_source" "$hrc_service"
+
+config=$(hrc_path "$hrc_config")
+if [ ! -e "$config" ] && [ ! -L "$config" ]; then
+    hrc_install_file 0640 "$bundle/pkg/hrc.zon" "$hrc_config"
+fi
+sh "$bundle/pkg/scripts/postinstall.sh" install
+echo "hrc: installed; removal command: $hrc_payload/control remove"

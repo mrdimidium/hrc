@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+[Unit]
+Description=Hosted Runner Controller
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=hrc
+Group=hrc
+WorkingDirectory=/var/lib/hrc
+ExecStart=/usr/local/bin/hrc -config /etc/hrc/hrc.zon
+Restart=on-failure
+RestartSec=10
+KillMode=control-group
+TimeoutStopSec=60
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

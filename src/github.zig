@@ -46,8 +46,8 @@ pub const Config = struct {
     /// Explicit GitHub runner group ID in which to create the scale set.
     runner_group_id: u64,
 
-    /// Environment variable containing a PAT with permission to manage runners.
-    token_env: []const u8 = "GITHUB_TOKEN",
+    /// Secret containing a PAT with permission to manage runners.
+    token: @import("secret.zig").Secret = .{ .env = "GITHUB_TOKEN" },
 
     /// GitHub.com by default; can point to a GHES API or a local test server.
     api_url: []const u8 = "https://api.github.com",
