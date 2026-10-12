@@ -35,13 +35,6 @@ case $os in
     FreeBSD)
         echo 'hrc: configure /usr/local/etc/hrc/hrc.zon, then sysrc hrc_enable=YES and service hrc start'
         ;;
-    OpenBSD)
-        echo 'hrc: configure /etc/hrc/hrc.zon, then rcctl enable hrc and rcctl start hrc'
-        ;;
-    NetBSD)
-        echo 'hrc: configure /usr/pkg/etc/hrc/hrc.zon and set hrc=YES in /etc/rc.conf.d/hrc'
-        echo 'hrc: start with /etc/rc.d/hrc start'
-        ;;
     Darwin)
         plist=/Library/LaunchDaemons/org.hrc.plist
         if [ -f "$plist" ]; then plutil -lint "$plist"; fi

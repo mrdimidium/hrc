@@ -88,8 +88,6 @@ pub fn build(b: *std.Build) !void {
     const services: []const []const u8 = switch (target.result.os.tag) {
         .linux => &.{ "hrc.systemd", "hrc.alpine" },
         .freebsd => &.{"hrc.freebsd"},
-        .openbsd => &.{"hrc.openbsd"},
-        .netbsd => &.{"hrc.netbsd"},
         .macos => &.{"org.hrc.plist"},
         else => &.{},
     };

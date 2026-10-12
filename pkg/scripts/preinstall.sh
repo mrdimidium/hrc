@@ -21,12 +21,6 @@ if hrc_staging; then
     exit 0
 fi
 
-# Package dependencies must be available before accounts or services are changed.
-if [ "$os" = NetBSD ] && [ ! -x /usr/pkg/sbin/daemonize ]; then
-    echo 'hrc: install sysutils/daemonize from pkgsrc (pkgin install daemonize)' >&2
-    exit 1
-fi
-
 # Stop an existing controller before replacing its binary. Preserve enablement.
 hrc_select_init
 case $os in
@@ -42,16 +36,6 @@ case $os in
     FreeBSD)
         if [ -x /usr/local/etc/rc.d/hrc ] && service hrc onestatus >/dev/null 2>&1; then
             service hrc onestop
-        fi
-        ;;
-    OpenBSD)
-        if [ -x /etc/rc.d/hrc ] && rcctl check hrc >/dev/null 2>&1; then
-            rcctl stop hrc
-        fi
-        ;;
-    NetBSD)
-        if [ -x /etc/rc.d/hrc ] && /etc/rc.d/hrc onestatus >/dev/null 2>&1; then
-            /etc/rc.d/hrc onestop
         fi
         ;;
     Darwin)
@@ -85,12 +69,6 @@ case $os in
         if ! pw groupshow hrc >/dev/null 2>&1; then pw groupadd hrc; fi
         if ! pw usershow hrc >/dev/null 2>&1; then
             pw useradd hrc -g hrc -d "$state_dir" -s /usr/sbin/nologin -w no
-        fi
-        ;;
-    OpenBSD|NetBSD)
-        if ! getent group hrc >/dev/null; then groupadd hrc; fi
-        if ! getent passwd hrc >/dev/null; then
-            useradd -g hrc -d "$state_dir" -s /sbin/nologin -p '*' hrc
         fi
         ;;
     Darwin)

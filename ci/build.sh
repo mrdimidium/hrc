@@ -11,15 +11,11 @@ shellcheck -x -P SCRIPTDIR \
   pkg/control \
   pkg/scripts/*.sh \
   pkg/services/hrc.alpine \
-  pkg/services/hrc.freebsd \
-  pkg/services/hrc.netbsd \
-  pkg/services/hrc.openbsd
+  pkg/services/hrc.freebsd
 
 for target in \
   x86_64-linux-musl aarch64-linux-musl riscv64-linux-musl s390x-linux loongarch64-linux powerpc64le-linux \
-  x86_64-openbsd aarch64-openbsd \
   x86_64-freebsd aarch64-freebsd \
-  x86_64-netbsd aarch64-netbsd \
   x86_64-macos aarch64-macos \
   x86_64-windows aarch64-windows; do
 

@@ -56,10 +56,9 @@ pub fn Config(comptime Provider: type) type {
 
 const TestProvider = union(enum) {
     github: struct { version: []const u8 },
-    forgejo: struct { version: []const u8 },
 };
 
-test "parse groups for both providers and default rundir" {
+test "parse GitHub groups and default rundir" {
     const Provider = TestProvider;
     const ConfigType = Config(Provider);
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -68,7 +67,7 @@ test "parse groups for both providers and default rundir" {
     const config = try ConfigType.parse(std.testing.allocator, arena.allocator(),
         \\.{ .id = "build-01", .groups = .{
         \\    .{ .github = .{ .version = "2.338.0" } },
-        \\    .{ .forgejo = .{ .version = "13.0.0-zsf" } },
+        \\    .{ .github = .{ .version = "2.337.0" } },
         \\} }
     , &diagnostics);
     try std.testing.expectEqualStrings("build-01", config.id);
@@ -76,8 +75,8 @@ test "parse groups for both providers and default rundir" {
     try std.testing.expectEqual(@as(usize, 2), config.groups.len);
     try std.testing.expectEqual(std.meta.Tag(Provider).github, std.meta.activeTag(config.groups[0]));
     try std.testing.expectEqualStrings("2.338.0", config.groups[0].github.version);
-    try std.testing.expectEqual(std.meta.Tag(Provider).forgejo, std.meta.activeTag(config.groups[1]));
-    try std.testing.expectEqualStrings("13.0.0-zsf", config.groups[1].forgejo.version);
+    try std.testing.expectEqual(std.meta.Tag(Provider).github, std.meta.activeTag(config.groups[1]));
+    try std.testing.expectEqualStrings("2.337.0", config.groups[1].github.version);
 }
 
 test "parse custom rundir and empty groups" {
@@ -102,9 +101,9 @@ test "reject invalid ZON and incomplete provider settings" {
         ".{ .id = \"host\", .groups = .{}, .unknown = true }",
         ".{ .id = \"host\", .groups = .{ .{ .other = .{ .version = \"1.0.0\" } } } }",
         ".{ .id = \"host\", .groups = .{ .{ .github = .{} } } }",
-        ".{ .id = \"host\", .groups = .{ .{ .forgejo = .{} } } }",
+        ".{ .id = \"host\", .groups = .{ .{ .other = .{} } } }",
         ".{ .id = \"host\", .groups = .{ .{ .github = .{ .version = 123 } } } }",
-        ".{ .id = \"host\", .groups = .{ .{ .forgejo = .{ .version = \"1.0.0\", .unknown = true } } } }",
+        ".{ .id = \"host\", .groups = .{ .{ .github = .{ .version = \"1.0.0\", .unknown = true } } } }",
     };
     for (sources) |source| {
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

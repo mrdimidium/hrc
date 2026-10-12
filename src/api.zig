@@ -324,45 +324,6 @@ test "GitHub queue authenticates, acquires, acknowledges and refreshes queue cre
     try peer.await(std.testing.io);
 }
 
-test "Forgejo queue filters labels, registers an ephemeral runner and deduplicates attempts" {
-    const forgejo = @import("forgejo.zig");
-    var server = try TestServer.init();
-    defer server.deinit();
-    const steps = [_]TestServer.Step{
-        .{ .method = "GET", .target = "/api/v1/user/actions/runners/jobs?labels=linux%2Czig", .authorization = "token pat", .reply = "null" },
-        .{ .method = "GET", .target = "/api/v1/user/actions/runners/jobs?labels=linux%2Czig", .authorization = "token pat", .reply = "[{\"handle\":\"wrong\",\"status\":\"waiting\",\"runs_on\":[\"docker\"]},{\"handle\":\"a\",\"status\":\"waiting\",\"runs_on\":[\"linux\",\"zig\"]}]" },
-        .{ .method = "POST", .target = "/api/v1/user/actions/runners", .authorization = "token pat", .status = 201, .reply = "{\"id\":1,\"uuid\":\"uuid-a\",\"token\":\"token-a\"}", .name_prefix = "host-build-", .ephemeral = true },
-        .{ .method = "DELETE", .target = "/api/v1/user/actions/runners/1", .authorization = "token pat", .status = 404 },
-        .{ .method = "GET", .target = "/api/v1/user/actions/runners/jobs?labels=linux%2Czig", .authorization = "token pat", .reply = "[{\"handle\":\"a\",\"status\":\"waiting\",\"runs_on\":[\"linux\"]},{\"handle\":\"b\",\"status\":\"waiting\",\"runs_on\":[\"linux\"]}]" },
-        .{ .method = "POST", .target = "/api/v1/user/actions/runners", .authorization = "token pat", .status = 201, .reply = "{\"id\":2,\"uuid\":\"uuid-b\",\"token\":\"token-b\"}" },
-        .{ .method = "DELETE", .target = "/api/v1/user/actions/runners/2", .authorization = "token pat", .status = 204 },
-    };
-    var peer = try Io.concurrent(std.testing.io, TestServer.serve, .{ &server, &steps });
-    defer peer.cancel(std.testing.io) catch {};
-    var transport = Api.init(std.testing.io, std.testing.allocator);
-    defer transport.deinit();
-    var queue = try forgejo.init(&transport, std.testing.allocator, .{
-        .version = "13.0.0-zsf",
-        .url = server.url,
-        .name = "build",
-        .labels = &.{ "linux", "zig" },
-        .poll_interval_ms = 1,
-    }, "host", "pat");
-    defer queue.deinit();
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const first = try queue.next(arena.allocator());
-    try std.testing.expectEqualStrings("a", first.handle.?);
-    try std.testing.expectEqualStrings("token-a", first.token);
-    try std.testing.expectEqualStrings("linux:host", first.labels[0]);
-    try queue.finish(first, true);
-    const second = try queue.next(arena.allocator());
-    try std.testing.expectEqualStrings("b", second.handle.?);
-    try queue.finish(second, false);
-    try std.testing.expect(!queue.submitted.contains("b"));
-    try peer.await(std.testing.io);
-}
-
 test "GitHub restores initial demand, refreshes admin auth and waits for completion before another JIT" {
     const github = @import("github.zig");
     var server = try TestServer.init();
@@ -842,7 +803,6 @@ pub const TestServer = struct {
         entered: ?*Io.Event = null,
         release: ?*Io.Event = null,
         name_prefix: ?[]const u8 = null,
-        ephemeral: ?bool = null,
         work_folder: ?[]const u8 = null,
     };
 
@@ -904,13 +864,11 @@ pub const TestServer = struct {
             const body = try reader.interface.readAllocAll(a, length);
             if (step.body) |want|
                 try std.testing.expectEqualStrings(want, body);
-            if (step.name_prefix != null or step.ephemeral != null or step.work_folder != null) {
+            if (step.name_prefix != null or step.work_folder != null) {
                 const parsed = try std.json.parseFromSlice(std.json.Value, a, body, .{});
                 const object = parsed.value.object;
                 if (step.name_prefix) |prefix|
                     try std.testing.expect(std.mem.startsWith(u8, object.get("name").?.string, prefix));
-                if (step.ephemeral) |value|
-                    try std.testing.expectEqual(value, object.get("ephemeral").?.bool);
                 if (step.work_folder) |value|
                     try std.testing.expectEqualStrings(value, object.get("workFolder").?.string);
             }
@@ -971,43 +929,4 @@ test "GitHub repository queue preserves API base paths and encodes repository na
     alive = false;
     queue.deinit();
     try peer.await(std.testing.io);
-}
-
-test "Forgejo typed requests work in every scope and return owned credentials" {
-    const forgejo = @import("forgejo.zig");
-    const configs = [_]forgejo.Config{
-        .{ .version = "13.0.0-zsf", .scope = .user },
-        .{ .version = "13.0.0-zsf", .scope = .admin },
-        .{ .version = "13.0.0-zsf", .scope = .{ .org = "team name" } },
-        .{ .version = "13.0.0-zsf", .scope = .{ .repo = .{ .owner = "team name", .name = "my/repo" } } },
-    };
-    const scopes = [_][]const u8{ "user", "admin", "orgs/team%20name", "repos/team%20name/my%2Frepo" };
-    for (configs, scopes) |settings, scope| {
-        var server = try TestServer.init();
-        defer server.deinit();
-        var scratch = std.heap.ArenaAllocator.init(std.testing.allocator);
-        defer scratch.deinit();
-        const a = scratch.allocator();
-        const base = try std.fmt.allocPrint(a, "/api/v1/{s}/actions/runners", .{scope});
-        const steps = [_]TestServer.Step{
-            .{ .method = "GET", .target = try std.fmt.allocPrint(a, "{s}/jobs?labels=linux", .{base}), .authorization = "token pat", .reply = "[{\"handle\":\"attempt\",\"status\":\"waiting\",\"runs_on\":[\"linux\"]}]" },
-            .{ .method = "POST", .target = base, .authorization = "token pat", .reply = "{\"id\":7,\"uuid\":\"owned-uuid\",\"token\":\"owned-token\"}", .ephemeral = true },
-            .{ .method = "DELETE", .target = try std.fmt.allocPrint(a, "{s}/7", .{base}), .authorization = "token pat", .status = 404 },
-        };
-        var peer = try Io.concurrent(std.testing.io, TestServer.serve, .{ &server, &steps });
-        defer peer.cancel(std.testing.io) catch {};
-        var transport = Api.init(std.testing.io, std.testing.allocator);
-        defer transport.deinit();
-        var cfg = settings;
-        cfg.url = server.url;
-        cfg.name = "build";
-        cfg.labels = &.{"linux"};
-        var queue = try forgejo.init(&transport, std.testing.allocator, cfg, "host", "pat");
-        defer queue.deinit();
-        const job = try queue.next(a);
-        try std.testing.expectEqualStrings("owned-uuid", job.uuid);
-        try std.testing.expectEqualStrings("owned-token", job.token);
-        try queue.finish(job, true);
-        try peer.await(std.testing.io);
-    }
 }

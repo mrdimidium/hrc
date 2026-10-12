@@ -16,7 +16,6 @@ esac
 hrc_require_root
 hrc_select_init
 if hrc_staging; then
-    if [ "$remove" = yes ] && [ "$hrc_os" = NetBSD ]; then hrc_disable_netbsd; fi
     exit 0
 fi
 
@@ -45,20 +44,6 @@ case $hrc_os in
             service hrc onestop
         fi
         if [ "$remove" = yes ]; then sysrc -x hrc_enable || true; fi
-        ;;
-    OpenBSD)
-        if [ -x /etc/rc.d/hrc ]; then
-            if rcctl check hrc >/dev/null 2>&1; then rcctl stop hrc; fi
-            if [ "$remove" = yes ]; then rcctl disable hrc; fi
-        fi
-        ;;
-    NetBSD)
-        if [ -x /etc/rc.d/hrc ] && /etc/rc.d/hrc onestatus >/dev/null 2>&1; then
-            /etc/rc.d/hrc onestop
-        fi
-        if [ "$remove" = yes ]; then
-            hrc_disable_netbsd
-        fi
         ;;
     Darwin)
         if launchctl print system/org.hrc >/dev/null 2>&1; then launchctl bootout system/org.hrc; fi

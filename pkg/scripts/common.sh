@@ -37,14 +37,6 @@ case $hrc_os in
         hrc_target_os=freebsd
         hrc_config_dir=/usr/local/etc/hrc; hrc_state_dir=/var/db/hrc; hrc_log_dir=/var/log/hrc
         ;;
-    OpenBSD)
-        hrc_target_os=openbsd
-        hrc_config_dir=/etc/hrc; hrc_state_dir=/var/db/hrc; hrc_log_dir=/var/log/hrc
-        ;;
-    NetBSD)
-        hrc_target_os=netbsd; hrc_prefix=/usr/pkg
-        hrc_config_dir=/usr/pkg/etc/hrc; hrc_state_dir=/var/db/hrc; hrc_log_dir=/var/log/hrc
-        ;;
     Darwin)
         hrc_target_os=macos
         hrc_config_dir=/usr/local/etc/hrc
@@ -57,8 +49,7 @@ hrc_payload="$hrc_prefix/share/hrc"
 hrc_config="$hrc_config_dir/hrc.zon"
 
 hrc_arch() {
-    # NetBSD's hardware name may be evbarm; -p reports the executable architecture.
-    if [ "$hrc_os" = NetBSD ]; then machine=$(uname -p); else machine=$(uname -m); fi
+    machine=$(uname -m)
     case $machine in
         amd64|x86_64) printf '%s\n' x86_64 ;;
         arm64|aarch64) printf '%s\n' aarch64 ;;
@@ -94,15 +85,6 @@ hrc_prepare_dirs() {
     hrc_install_dir 0700 hrc hrc "$hrc_log_dir"
 }
 
-hrc_disable_netbsd() {
-    # This per-service setting overrides rc.conf without changing other services.
-    hrc_install_dir 0755 root wheel /etc/rc.conf.d
-    rc_config=$(hrc_path /etc/rc.conf.d/hrc)
-    if [ ! -f "$rc_config" ] || [ "$(tail -n 1 "$rc_config")" != hrc=NO ]; then
-        printf '\nhrc=NO\n' >> "$rc_config"
-    fi
-}
-
 hrc_select_init() {
     hrc_init=${HRC_INIT:-}
     if [ -z "$hrc_init" ]; then
@@ -118,8 +100,6 @@ hrc_select_init() {
                 fi
                 ;;
             FreeBSD) hrc_init=freebsd ;;
-            OpenBSD) hrc_init=openbsd ;;
-            NetBSD) hrc_init=netbsd ;;
             Darwin) hrc_init=launchd ;;
         esac
     fi
@@ -127,8 +107,6 @@ hrc_select_init() {
         Linux:systemd) hrc_service_source=hrc.systemd; hrc_service=/etc/systemd/system/hrc.service; hrc_service_mode=0644 ;;
         Linux:openrc) hrc_service_source=hrc.alpine; hrc_service=/etc/init.d/hrc; hrc_service_mode=0755 ;;
         FreeBSD:freebsd) hrc_service_source=hrc.freebsd; hrc_service=/usr/local/etc/rc.d/hrc; hrc_service_mode=0755 ;;
-        OpenBSD:openbsd) hrc_service_source=hrc.openbsd; hrc_service=/etc/rc.d/hrc; hrc_service_mode=0755 ;;
-        NetBSD:netbsd) hrc_service_source=hrc.netbsd; hrc_service=/etc/rc.d/hrc; hrc_service_mode=0755 ;;
         Darwin:launchd) hrc_service_source=org.hrc.plist; hrc_service=/Library/LaunchDaemons/org.hrc.plist; hrc_service_mode=0644 ;;
         *) echo "hrc: unsupported init system $hrc_init on $hrc_os" >&2; exit 1 ;;
     esac

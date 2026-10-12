@@ -21,15 +21,5 @@
                 .token = .{ .env = "GITHUB_TOKEN" },
             },
         },
-        .{
-            .forgejo = .{
-                .version = "13.0.0-zsf",
-                .url = "https://forgejo.example.com",
-                .name = "forgejo-builds",
-                .labels = .{"linux"},
-                .scope = .{ .org = "example-org" },
-                .token = .{ .env = "FORGEJO_TOKEN" },
-            },
-        },
     },
 }

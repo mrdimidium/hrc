@@ -8,7 +8,6 @@ const Io = std.Io;
 
 const api = @import("api.zig");
 const config_schema = @import("config.zig");
-const forgejo = @import("forgejo.zig");
 const github = @import("github.zig");
 
 const Self = @This();
@@ -22,7 +21,6 @@ environ: *const std.process.Environ.Map,
 /// Stateful implementations share one tag across provider, configuration and job.
 const Provider = union(enum) {
     github: github,
-    forgejo: forgejo,
 
     pub const Config = providerData("Config");
     pub const Job = providerData("Job");
@@ -109,19 +107,17 @@ test "providers retain resolved tokens and reject malformed tokens" {
     defer transport.deinit();
     const configs = [_]Provider.Config{
         .{ .github = .{ .version = "2.338.0", .name = "github", .url = "https://github.com/org", .labels = &.{"linux"}, .runner_group_id = 1, .token = .{ .env = "TOKEN" } } },
-        .{ .forgejo = .{ .version = "13.0.0-zsf", .name = "forgejo", .url = "https://forgejo.example.com", .labels = &.{"linux"}, .token = .{ .@"inline" = "secret\n" } } },
     };
     for (configs) |cfg| {
         var provider = try Provider.init(&transport, allocator, &environ, cfg, "host");
         defer provider.deinit();
         switch (provider) {
             .github => |backend| try std.testing.expectEqualStrings("Bearer secret", backend.authorization),
-            .forgejo => |backend| try std.testing.expectEqualStrings("token secret", backend.authorization),
         }
     }
     for ([_][]const u8{ "", "\n", "token\nextra", "token\n\n", "token\r" }) |token| {
-        var cfg = configs[1];
-        cfg.forgejo.token = .{ .@"inline" = token };
+        var cfg = configs[0];
+        cfg.github.token = .{ .@"inline" = token };
         try std.testing.expectError(error.InvalidToken, Provider.init(&transport, allocator, &environ, cfg, "host"));
     }
 }
@@ -379,15 +375,10 @@ test "runner backends reject invalid and unknown release versions" {
     var transport = api.Api.init(std.testing.io, std.testing.allocator);
     defer transport.deinit();
     inline for (@typeInfo(Provider).@"union".field_types) |Backend| {
-        const cfg: Backend.Config = if (Backend == github) .{
+        const cfg: Backend.Config = .{
             .version = "../../etc",
             .runner_group_id = 1,
             .url = "https://github.com/acme",
-            .name = "build",
-            .labels = &.{"linux"},
-        } else .{
-            .version = "../../etc",
-            .url = "https://forgejo.example",
             .name = "build",
             .labels = &.{"linux"},
         };
@@ -399,7 +390,7 @@ test "runner backends reject invalid and unknown release versions" {
     }
 }
 
-test "runJob rejects a provider mismatch and cleans failed workspaces" {
+test "runJob cleans failed workspaces" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
@@ -411,14 +402,6 @@ test "runJob rejects a provider mismatch and cleans failed workspaces" {
     defer environ.deinit();
     var daemon = init(io, std.testing.allocator, &environ, .{ .id = "host", .rundir = root, .groups = &.{} });
     const request: Provider.Job = .{ .github = .{ .jit_config = "" } };
-    var provider: Provider = .{ .forgejo = try forgejo.init(&transport, std.testing.allocator, .{
-        .version = "0.0.0",
-        .url = "https://forgejo.example",
-        .name = "build",
-        .labels = &.{"linux"},
-    }, "host", "token") };
-    defer provider.deinit();
-    try std.testing.expectError(error.ProviderMismatch, daemon.runJob(&provider, request, root));
     var github_provider: Provider = .{ .github = try github.init(&transport, std.testing.allocator, .{
         .version = "0.0.0",
         .runner_group_id = 1,
@@ -443,12 +426,23 @@ test "Select receives a ready queue while another is blocked in HTTP and cancels
     var entered: Io.Event = .unset;
     var release: Io.Event = .unset;
     const blocked_steps = [_]Server.Step{
-        .{ .method = "GET", .target = "/api/v1/user/actions/runners/jobs?labels=linux", .authorization = "token pat", .reply = "null", .entered = &entered, .release = &release },
+        .{ .method = "POST", .target = "/orgs/acme/actions/runners/registration-token", .authorization = "Bearer pat", .reply = "{\"token\":\"registration\"}" },
+        .{ .method = "POST", .target = "/actions/runner-registration", .authorization = "RemoteAuth registration", .reply = "{\"url\":\"$URL\",\"token\":\"admin\"}" },
+        .{ .method = "GET", .target = "/_apis/runtime/runnerscalesets?runnerGroupId=1&name=host-build&api-version=6.0-preview", .authorization = "Bearer admin", .reply = "{\"value\":[{\"id\":7}]}" },
+        .{ .method = "PATCH", .target = "/_apis/runtime/runnerscalesets/7?api-version=6.0-preview", .authorization = "Bearer admin", .reply = "{\"id\":7}" },
+        .{ .method = "POST", .target = "/_apis/runtime/runnerscalesets/7/sessions?api-version=6.0-preview", .authorization = "Bearer admin", .reply = "{\"sessionId\":\"session\",\"messageQueueUrl\":\"$URL/queue\",\"messageQueueAccessToken\":\"queue-token\",\"statistics\":{\"totalAssignedJobs\":1}}" },
+        .{ .method = "POST", .target = "/_apis/runtime/runnerscalesets/7/generatejitconfig?api-version=6.0-preview", .authorization = "Bearer admin", .reply = "{\"runner\":{\"id\":123},\"encodedJITConfig\":\"first\"}", .entered = &entered, .release = &release },
+        .{ .method = "DELETE", .target = "/_apis/runtime/runnerscalesets/7/sessions/session?api-version=6.0-preview", .authorization = "Bearer admin", .status = 204 },
     };
     const available_steps = [_]Server.Step{
-        .{ .method = "GET", .target = "/api/v1/user/actions/runners/jobs?labels=linux", .authorization = "token pat", .reply = "[{\"handle\":\"ready\",\"status\":\"waiting\",\"runs_on\":[\"linux\"]}]" },
-        .{ .method = "POST", .target = "/api/v1/user/actions/runners", .authorization = "token pat", .status = 201, .reply = "{\"id\":1,\"uuid\":\"uuid\",\"token\":\"secret\"}" },
-        .{ .method = "DELETE", .target = "/api/v1/user/actions/runners/1", .authorization = "token pat", .status = 204 },
+        .{ .method = "POST", .target = "/orgs/acme/actions/runners/registration-token", .authorization = "Bearer pat", .reply = "{\"token\":\"registration\"}" },
+        .{ .method = "POST", .target = "/actions/runner-registration", .authorization = "RemoteAuth registration", .reply = "{\"url\":\"$URL\",\"token\":\"admin\"}" },
+        .{ .method = "GET", .target = "/_apis/runtime/runnerscalesets?runnerGroupId=1&name=host-build&api-version=6.0-preview", .authorization = "Bearer admin", .reply = "{\"value\":[{\"id\":7}]}" },
+        .{ .method = "PATCH", .target = "/_apis/runtime/runnerscalesets/7?api-version=6.0-preview", .authorization = "Bearer admin", .reply = "{\"id\":7}" },
+        .{ .method = "POST", .target = "/_apis/runtime/runnerscalesets/7/sessions?api-version=6.0-preview", .authorization = "Bearer admin", .reply = "{\"sessionId\":\"session\",\"messageQueueUrl\":\"$URL/queue\",\"messageQueueAccessToken\":\"queue-token\",\"statistics\":{\"totalAssignedJobs\":1}}" },
+        .{ .method = "POST", .target = "/_apis/runtime/runnerscalesets/7/generatejitconfig?api-version=6.0-preview", .authorization = "Bearer admin", .reply = "{\"runner\":{\"id\":123},\"encodedJITConfig\":\"first\"}" },
+        .{ .method = "DELETE", .target = "/_apis/distributedtask/pools/0/agents/123?api-version=6.0-preview", .authorization = "Bearer admin", .status = 404 },
+        .{ .method = "DELETE", .target = "/_apis/runtime/runnerscalesets/7/sessions/session?api-version=6.0-preview", .authorization = "Bearer admin", .status = 204 },
     };
     var blocked_peer = try Io.concurrent(io, Server.serve, .{ &blocked, &blocked_steps });
     defer blocked_peer.cancel(io) catch {};
@@ -460,20 +454,25 @@ test "Select receives a ready queue while another is blocked in HTTP and cancels
     defer environ.deinit();
     var daemon = init(io, allocator, &environ, .{ .id = "host", .groups = &.{} });
     var queues: [2]Provider = undefined;
-    queues[0] = .{ .forgejo = try forgejo.init(&transport, allocator, .{
-        .version = "13.0.0-zsf",
-        .url = blocked.url,
-        .name = "blocked",
+    queues[0] = .{ .github = try github.init(&transport, allocator, .{
+        .version = "2.338.0",
+        .runner_group_id = 1,
+        .url = "https://github.com/acme",
+        .api_url = blocked.url,
+        .name = "build",
         .labels = &.{"linux"},
     }, "host", "pat") };
     defer queues[0].deinit();
-    queues[1] = .{ .forgejo = try forgejo.init(&transport, allocator, .{
-        .version = "13.0.0-zsf",
-        .url = available.url,
-        .name = "available",
+    queues[1] = .{ .github = try github.init(&transport, allocator, .{
+        .version = "2.338.0",
+        .runner_group_id = 1,
+        .url = "https://github.com/acme",
+        .api_url = available.url,
+        .name = "build",
         .labels = &.{"linux"},
     }, "host", "pat") };
-    defer queues[1].deinit();
+    var available_alive = true;
+    defer if (available_alive) queues[1].deinit();
     var buffer: [2]QueueEvent = undefined;
     var select: Io.Select(QueueEvent) = .init(io, &buffer);
     defer while (select.cancel()) |event| {
@@ -487,13 +486,18 @@ test "Select receives a ready queue while another is blocked in HTTP and cancels
     defer ready.arena.deinit();
     try std.testing.expectEqual(@as(usize, 1), ready.group);
     const request = try ready.result;
-    try std.testing.expectEqualStrings("ready", request.forgejo.handle.?);
+    try std.testing.expectEqualStrings("first", request.github.jit_config);
     try queues[1].finish(request, false);
+    queues[1].deinit();
+    available_alive = false;
     try available_peer.await(io);
     var canceled = select.cancel().?.ready;
     defer canceled.arena.deinit();
     try std.testing.expectEqual(@as(usize, 0), canceled.group);
     try std.testing.expectError(error.Canceled, canceled.result);
+    // The mock peer is still blocked in the canceled request.
+    queues[0].github.session.?.deinit();
+    queues[0].github.session = null;
 }
 
 test "cached runner serves repeated jobs without downloading or retaining workspaces" {
@@ -502,16 +506,16 @@ test "cached runner serves repeated jobs without downloading or retaining worksp
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
-    try tmp.dir.createDir(io, "forgejo-13.0.0-zsf", .default_dir);
-    try tmp.dir.writeFile(io, .{ .sub_path = "forgejo-13.0.0-zsf/.complete", .data = "" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "forgejo-13.0.0-zsf/forgejo-runner", .data =
+    try tmp.dir.createDirPath(io, "github-2.338.0/bin");
+    try tmp.dir.writeFile(io, .{ .sub_path = "github-2.338.0/.complete", .data = "" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "github-2.338.0/bin/Runner.Listener", .data =
         \\#!/bin/sh
-        \\[ -f config.yaml ] && [ -d _work ] && [ ! -f forgejo-runner ] || exit 98
+        \\[ "$1" = run ] && [ "$2" = --jitconfig ] && [ ! -d bin ] || exit 98
         \\touch job-output
         \\exit 0
         \\
     });
-    const file = try tmp.dir.openFile(io, "forgejo-13.0.0-zsf/forgejo-runner", .{});
+    const file = try tmp.dir.openFile(io, "github-2.338.0/bin/Runner.Listener", .{});
     defer file.close(io);
     try file.setPermissions(io, .fromMode(0o755));
     const root = try @import("testing.zig").tmpPath(tmp);
@@ -523,9 +527,10 @@ test "cached runner serves repeated jobs without downloading or retaining worksp
     var daemon = init(io, allocator, &environ, .{ .id = "host", .bindir = root, .rundir = workdir, .groups = &.{} });
     var transport = api.Api.init(io, allocator);
     defer transport.deinit();
-    var provider: Provider = .{ .forgejo = try forgejo.init(&transport, allocator, .{
-        .version = "13.0.0-zsf",
-        .url = "http://127.0.0.1:1",
+    var provider: Provider = .{ .github = try github.init(&transport, allocator, .{
+        .version = "2.338.0",
+        .runner_group_id = 1,
+        .url = "https://github.com/acme",
         .name = "build",
         .labels = &.{"linux"},
     }, "host", "token") };
@@ -540,12 +545,7 @@ test "cached runner serves repeated jobs without downloading or retaining worksp
     const after_restart = try restarted.prepareRunner(&provider);
     defer allocator.free(after_restart);
     try std.testing.expectEqualStrings(installation, after_restart);
-    const request: Provider.Job = .{ .forgejo = .{
-        .url = "http://127.0.0.1:1",
-        .uuid = "uuid",
-        .token = "token",
-        .labels = &.{"linux:host"},
-    } };
+    const request: Provider.Job = .{ .github = .{ .jit_config = "eyIucnVubmVyIjoiZXlKM2IzSnJSbTlzWkdWeUlqb2lYM2R2Y21zaUxDSmhaMlZ1ZEVsa0lqb3hNak45IiwiLmNyZWRlbnRpYWxzIjoiYjNCaGNYVmxJR055WldSbGJuUnBZV3h6In0=" } };
     for (0..2) |_| {
         const term = try daemon.runJob(&provider, request, installation);
         try std.testing.expect(term.success());
@@ -553,7 +553,7 @@ test "cached runner serves repeated jobs without downloading or retaining worksp
         defer jobs.close(io);
         var entries = jobs.iterate();
         try std.testing.expectEqual(@as(?Io.Dir.Entry, null), try entries.next(io));
-        try tmp.dir.access(io, "forgejo-13.0.0-zsf/forgejo-runner", .{});
-        try std.testing.expectError(error.FileNotFound, tmp.dir.access(io, "forgejo-13.0.0-zsf/config.yaml", .{}));
+        try tmp.dir.access(io, "github-2.338.0/bin/Runner.Listener", .{});
+        try std.testing.expectError(error.FileNotFound, tmp.dir.access(io, "github-2.338.0/.credentials", .{}));
     }
 }

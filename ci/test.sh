@@ -25,16 +25,6 @@ if [ "$#" = 3 ]; then
     image_sha256=3d26c952026c660e1a081ce32e84d7cccb3707833d07231efa020071261aad4f
     key_sha256=ca74ee66322879bd25654034caeaca043d7714973d634adb9dfecbc420af945e
     ;;
-  openbsd:7.8)
-    image_url=https://github.com/anyvm-org/openbsd-builder/releases/download/v2.1.0/openbsd-7.8.qcow2.zst
-    image_sha256=4aa24878990b07219a384af6cde1f73ce93bdde8a5195b17557592f144f93c67
-    key_sha256=7a1794d0ee30bcd68f621815c268f5b505350928191cba29d7f44fe2b8fe14f0
-    ;;
-  netbsd:10.1)
-    image_url=https://github.com/anyvm-org/netbsd-builder/releases/download/v2.2.6/netbsd-10.1.qcow2.zst
-    image_sha256=4cedeed78ccf325a80435043c401ed0d69cbe91bebf0d124d276183ff4682eb9
-    key_sha256=be6680850e4dd0f477f2031c3c59bcbabd403027d5f5a13c498b2d42c66487e6
-    ;;
   *) echo "Unpinned VM OS/release: $os $3" >&2; exit 1 ;;
   esac
 fi
@@ -52,8 +42,7 @@ if [ "$#" = 3 ]; then
   [ "$arch" = x86_64 ] || { echo 'VM tests currently require x86_64' >&2; exit 1; }
 
   case $os in
-  alpine | freebsd | openbsd) net_card=virtio-net-pci ;;
-  netbsd) net_card=e1000 ;;
+  alpine | freebsd) net_card=virtio-net-pci ;;
   esac
 
   # Cache the compressed image; verify it before every extraction.
@@ -147,7 +136,7 @@ ubuntu | alpine) os=linux ;;
 esac
 
 case $os in
-linux | macos | freebsd | openbsd | netbsd) extension= ;;
+linux | macos | freebsd) extension= ;;
 windows) extension=.exe ;;
 *)
   echo "Unsupported test OS: $os" >&2
@@ -162,7 +151,7 @@ expected=$(awk -v name="$name" 'substr($0, 67) == name { print substr($0, 1, 64)
 case $os in
 linux | windows) actual=$(sha256sum "$tests") ;;
 macos) actual=$(shasum -a 256 "$tests") ;;
-freebsd | openbsd | netbsd) actual=$(sha256 -q "$tests") ;;
+freebsd) actual=$(sha256 -q "$tests") ;;
 esac
 
 actual=${actual%% *}
