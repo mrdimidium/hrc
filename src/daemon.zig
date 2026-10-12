@@ -278,7 +278,7 @@ fn prepareRunner(self: *Self, provider: *Provider) ![]const u8 {
     defer directory.close(self.io);
 
     var root_buffer: [Io.Dir.max_path_bytes]u8 = undefined;
-    const root = root_buffer[0..try directory.realPath(self.io, &root_buffer)];
+    const root = root_buffer[0..try cwd.realPathFile(self.io, self.config.bindir, &root_buffer)];
 
     const name = try std.fmt.allocPrint(self.allocator, "{s}-{s}", .{ @tagName(std.meta.activeTag(provider.*)), version });
     defer self.allocator.free(name);
@@ -403,8 +403,8 @@ test "runJob rejects a provider mismatch and cleans failed workspaces" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
-    var buffer: [Io.Dir.max_path_bytes]u8 = undefined;
-    const root = buffer[0..try tmp.dir.realPath(io, &buffer)];
+    const root = try @import("testing.zig").tmpPath(tmp);
+    defer std.testing.allocator.free(root);
     var transport = api.Api.init(io, std.testing.allocator);
     defer transport.deinit();
     var environ = std.process.Environ.Map.init(std.testing.allocator);
@@ -514,8 +514,8 @@ test "cached runner serves repeated jobs without downloading or retaining worksp
     const file = try tmp.dir.openFile(io, "forgejo-13.0.0-zsf/forgejo-runner", .{});
     defer file.close(io);
     try file.setPermissions(io, .fromMode(0o755));
-    var buffer: [Io.Dir.max_path_bytes]u8 = undefined;
-    const root = buffer[0..try tmp.dir.realPath(io, &buffer)];
+    const root = try @import("testing.zig").tmpPath(tmp);
+    defer std.testing.allocator.free(root);
     const workdir = try std.fs.path.join(allocator, &.{ root, "jobs" });
     defer allocator.free(workdir);
     var environ = std.process.Environ.Map.init(allocator);

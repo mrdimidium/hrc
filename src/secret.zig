@@ -68,8 +68,8 @@ test "file source preserves bytes and propagates missing file errors" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     try tmp.dir.writeFile(io, .{ .sub_path = "token", .data = "file-token\r\n" });
-    var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    const root = buffer[0..try tmp.dir.realPath(io, &buffer)];
+    const root = try @import("testing.zig").tmpPath(tmp);
+    defer std.testing.allocator.free(root);
     const path = try std.fs.path.join(allocator, &.{ root, "token" });
     defer allocator.free(path);
     const bytes = try (Secret{ .file = path }).load(io, allocator, &environ);

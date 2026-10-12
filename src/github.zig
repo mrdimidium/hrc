@@ -152,6 +152,7 @@ pub fn download(self: *Self, dst: []const u8) anyerror!void {
     const io = transport.client.io;
     const version = self.config.version;
     _ = try std.SemanticVersion.parse(version);
+    const triplets = version_checksum.get(version) orelse return error.UnknownVersion;
 
     const platform = switch (builtin.os.tag) {
         .linux => switch (builtin.cpu.arch) {
@@ -172,8 +173,6 @@ pub fn download(self: *Self, dst: []const u8) anyerror!void {
         },
         else => return error.UnsupportedPlatform,
     };
-    const triplets = version_checksum.get(version) orelse return error.UnknownVersion;
-
     var url_buffer: [1024]u8 = undefined;
     var path_buffer: [Io.Dir.max_path_bytes]u8 = undefined;
 
@@ -297,7 +296,7 @@ pub fn run(
     var directory = try Io.Dir.cwd().openDir(io, dir, .{});
     defer directory.close(io);
     var root_buffer: [Io.Dir.max_path_bytes]u8 = undefined;
-    const root = root_buffer[0..try directory.realPath(io, &root_buffer)];
+    const root = root_buffer[0..try Io.Dir.cwd().realPathFile(io, dir, &root_buffer)];
     const executable = try std.fs.path.join(allocator, &.{ bindir, "bin", if (builtin.os.tag == .windows) "Runner.Listener.exe" else "Runner.Listener" });
     defer allocator.free(executable);
 
@@ -534,12 +533,12 @@ test "run waits for listener and preserves its exit status" {
     const executable = try tmp.dir.openFile(io, "bin/Runner.Listener", .{});
     defer executable.close(io);
     try executable.setPermissions(io, .fromMode(0o755));
-    var buffer: [Io.Dir.max_path_bytes]u8 = undefined;
-    const root = buffer[0..try tmp.dir.realPath(io, &buffer)];
+    const root = try @import("testing.zig").tmpPath(tmp);
+    defer std.testing.allocator.free(root);
     var job = std.testing.tmpDir(.{});
     defer job.cleanup();
-    var job_buffer: [Io.Dir.max_path_bytes]u8 = undefined;
-    const workdir = job_buffer[0..try job.dir.realPath(io, &job_buffer)];
+    const workdir = try @import("testing.zig").tmpPath(job);
+    defer std.testing.allocator.free(workdir);
     const jit = "eyIucnVubmVyIjoiZXlKM2IzSnJSbTlzWkdWeUlqb2lYM2R2Y21zaUxDSmhaMlZ1ZEVsa0lqb3hNak45IiwiLmNyZWRlbnRpYWxzIjoiYjNCaGNYVmxJR055WldSbGJuUnBZV3h6In0=";
     const term = try provider.run(.{ .jit_config = jit }, root, workdir);
     try std.testing.expectEqual(@as(u8, 7), term.exited);

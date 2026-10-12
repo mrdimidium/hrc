@@ -250,7 +250,7 @@ pub fn run(
     var directory = try Io.Dir.cwd().openDir(io, dir, .{});
     defer directory.close(io);
     var root_buffer: [Io.Dir.max_path_bytes]u8 = undefined;
-    const root = root_buffer[0..try directory.realPath(io, &root_buffer)];
+    const root = root_buffer[0..try Io.Dir.cwd().realPathFile(io, dir, &root_buffer)];
     const executable = try std.fs.path.join(allocator, &.{ bindir, if (builtin.os.tag == .windows) "forgejo-runner.exe" else "forgejo-runner" });
     defer allocator.free(executable);
     const workspace = try std.fs.path.join(allocator, &.{ root, "_work" });
@@ -358,8 +358,8 @@ test "run prepares credentials and workspace and waits for one-job" {
     const executable = try tmp.dir.openFile(io, "forgejo-runner", .{});
     defer executable.close(io);
     try executable.setPermissions(io, .fromMode(0o755));
-    var buffer: [Io.Dir.max_path_bytes]u8 = undefined;
-    const root = buffer[0..try tmp.dir.realPath(io, &buffer)];
+    const root = try @import("testing.zig").tmpPath(tmp);
+    defer std.testing.allocator.free(root);
     const request: Job = .{
         .url = "https://forgejo.example/",
         .uuid = "c9e50be9-a7c3-4aee-ba35-624c4ff8c519",
@@ -369,8 +369,8 @@ test "run prepares credentials and workspace and waits for one-job" {
     };
     var job = std.testing.tmpDir(.{});
     defer job.cleanup();
-    var job_buffer: [Io.Dir.max_path_bytes]u8 = undefined;
-    const workdir = job_buffer[0..try job.dir.realPath(io, &job_buffer)];
+    const workdir = try @import("testing.zig").tmpPath(job);
+    defer std.testing.allocator.free(workdir);
     const term = try provider.run(request, root, workdir);
     try std.testing.expectEqual(@as(u8, 7), term.exited);
     try tmp.dir.access(io, "forgejo-runner", .{});

@@ -224,8 +224,8 @@ test "invalid input and existing temporary file never start a download" {
 
     try tmp.dir.writeFile(io, .{ .sub_path = "existing.tmp", .data = "keep" });
 
-    var path_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    const root = path_buffer[0..try tmp.dir.realPath(io, &path_buffer)];
+    const root = try @import("testing.zig").tmpPath(tmp);
+    defer std.testing.allocator.free(root);
 
     const folder = try std.fs.path.join(allocator, &.{ root, "existing" });
     defer allocator.free(folder);
