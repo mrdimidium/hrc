@@ -33,10 +33,6 @@ case $hrc_os in
         hrc_target_os=linux; hrc_admin_group=root
         hrc_config_dir=/etc/hrc; hrc_state_dir=/var/lib/hrc; hrc_log_dir=/var/log/hrc
         ;;
-    FreeBSD)
-        hrc_target_os=freebsd
-        hrc_config_dir=/usr/local/etc/hrc; hrc_state_dir=/var/db/hrc; hrc_log_dir=/var/log/hrc
-        ;;
     Darwin)
         hrc_target_os=macos
         hrc_config_dir=/usr/local/etc/hrc
@@ -99,14 +95,12 @@ hrc_select_init() {
                     exit 1
                 fi
                 ;;
-            FreeBSD) hrc_init=freebsd ;;
             Darwin) hrc_init=launchd ;;
         esac
     fi
     case "$hrc_os:$hrc_init" in
         Linux:systemd) hrc_service_source=hrc.systemd; hrc_service=/etc/systemd/system/hrc.service; hrc_service_mode=0644 ;;
         Linux:openrc) hrc_service_source=hrc.alpine; hrc_service=/etc/init.d/hrc; hrc_service_mode=0755 ;;
-        FreeBSD:freebsd) hrc_service_source=hrc.freebsd; hrc_service=/usr/local/etc/rc.d/hrc; hrc_service_mode=0755 ;;
         Darwin:launchd) hrc_service_source=org.hrc.plist; hrc_service=/Library/LaunchDaemons/org.hrc.plist; hrc_service_mode=0644 ;;
         *) echo "hrc: unsupported init system $hrc_init on $hrc_os" >&2; exit 1 ;;
     esac

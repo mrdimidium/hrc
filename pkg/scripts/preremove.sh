@@ -39,12 +39,6 @@ case $hrc_os in
             fi
         fi
         ;;
-    FreeBSD)
-        if [ -x /usr/local/etc/rc.d/hrc ] && service hrc onestatus >/dev/null 2>&1; then
-            service hrc onestop
-        fi
-        if [ "$remove" = yes ]; then sysrc -x hrc_enable || true; fi
-        ;;
     Darwin)
         if launchctl print system/org.hrc >/dev/null 2>&1; then launchctl bootout system/org.hrc; fi
         if [ "$remove" = yes ]; then launchctl disable system/org.hrc; fi

@@ -10,8 +10,7 @@ shellcheck -x -P SCRIPTDIR \
   ci/*.sh \
   pkg/control \
   pkg/scripts/*.sh \
-  pkg/services/hrc.alpine \
-  pkg/services/hrc.freebsd
+  pkg/services/hrc.alpine
 
 # Fetch each archive in a separate process to avoid reusing idle connections.
 # --save-exact also prepares Zig's local package layout; use a temporary manifest.
@@ -43,8 +42,7 @@ rm -rf "$fetch_dir"
 trap - EXIT
 
 for target in \
-  x86_64-linux-musl aarch64-linux-musl riscv64-linux-musl s390x-linux loongarch64-linux powerpc64le-linux \
-  x86_64-freebsd aarch64-freebsd \
+  x86_64-linux-musl aarch64-linux-musl \
   x86_64-macos aarch64-macos \
   x86_64-windows aarch64-windows; do
 

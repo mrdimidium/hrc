@@ -33,11 +33,6 @@ case $os in
             if rc-service hrc status >/dev/null 2>&1; then rc-service hrc stop; fi
         fi
         ;;
-    FreeBSD)
-        if [ -x /usr/local/etc/rc.d/hrc ] && service hrc onestatus >/dev/null 2>&1; then
-            service hrc onestop
-        fi
-        ;;
     Darwin)
         if launchctl print system/org.hrc >/dev/null 2>&1; then
             launchctl bootout system/org.hrc
@@ -63,12 +58,6 @@ case $os in
             else
                 adduser -S -H -D -G hrc -h "$state_dir" -s "$nologin" hrc
             fi
-        fi
-        ;;
-    FreeBSD)
-        if ! pw groupshow hrc >/dev/null 2>&1; then pw groupadd hrc; fi
-        if ! pw usershow hrc >/dev/null 2>&1; then
-            pw useradd hrc -g hrc -d "$state_dir" -s /usr/sbin/nologin -w no
         fi
         ;;
     Darwin)

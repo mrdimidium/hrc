@@ -32,9 +32,6 @@ case $os in
             echo 'hrc: configure /etc/hrc/hrc.zon, then rc-update add hrc default and rc-service hrc start'
         fi
         ;;
-    FreeBSD)
-        echo 'hrc: configure /usr/local/etc/hrc/hrc.zon, then sysrc hrc_enable=YES and service hrc start'
-        ;;
     Darwin)
         plist=/Library/LaunchDaemons/org.hrc.plist
         if [ -f "$plist" ]; then plutil -lint "$plist"; fi

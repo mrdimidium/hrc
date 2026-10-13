@@ -320,18 +320,7 @@ fn prepareRunner(self: *Self, provider: *Provider) ![]const u8 {
         const complete = try installed.createFile(self.io, ".complete", .{ .exclusive = true });
         complete.close(self.io);
     }
-    if (builtin.os.tag == .freebsd) {
-        // Zig's FreeBSD renamePreserve fallback hard-links the source, which
-        // cannot work for directories. Completed installations are nonempty,
-        // so rename also refuses to replace one published concurrently.
-        if (cwd.access(self.io, path, .{})) |_| return error.PathAlreadyExists else |err| switch (err) {
-            error.FileNotFound => {},
-            else => return err,
-        }
-        try cwd.rename(staging, cwd, path, self.io);
-    } else {
-        try cwd.renamePreserve(staging, cwd, path, self.io);
-    }
+    try cwd.renamePreserve(staging, cwd, path, self.io);
     return path;
 }
 
