@@ -5,7 +5,7 @@ const std = @import("std");
 
 const BuildMode = enum { release, dev, snapshot };
 
-const runner_version = std.mem.trim(u8, @embedFile("vendor/actions-runner/src/runnerversion"), " \n\r");
+const runner_version = std.mem.trim(u8, @embedFile("runner/src/runnerversion"), " \n\r");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -210,10 +210,10 @@ fn buildRunner(b: *std.Build, target: std.Build.ResolvedTarget) ?std.Build.LazyP
     // Zig fetches requested lazy dependencies and reconfigures the build.
     if (!available) return null;
 
-    const commit = git(b, &.{ "git", "-C", "vendor/actions-runner", "rev-parse", "HEAD" }) orelse "unknown";
+    const commit = git(b, &.{ "git", "-C", "runner", "rev-parse", "HEAD" }) orelse "unknown";
     inline for (.{ "Listener", "Worker" }) |component| {
         const workspace = b.addTempFiles();
-        const source = workspace.addCopyDirectory(b.path("vendor/actions-runner/src"), "src", .{});
+        const source = workspace.addCopyDirectory(b.path("runner/src"), "src", .{});
         const constants = b.addMutateFiles(source);
         _ = constants.add("Runner.Sdk/BuildConstants.cs", b.fmt(
             \\namespace GitHub.Runner.Sdk {{
@@ -245,13 +245,13 @@ fn buildRunner(b: *std.Build, target: std.Build.ResolvedTarget) ?std.Build.LazyP
         _ = payload.addCopyDirectory(published, "bin", .{ .exclude_extensions = &.{".pdb"} });
     }
 
-    _ = payload.addCopyDirectory(b.path("vendor/actions-runner/src/Misc/layoutbin/hashFiles"), "bin/hashFiles", .{});
+    _ = payload.addCopyDirectory(b.path("runner/src/Misc/layoutbin/hashFiles"), "bin/hashFiles", .{});
 
     if (target.result.os.tag == .macos)
-        _ = payload.addCopyFile(b.path("vendor/actions-runner/src/Misc/layoutbin/macos-run-invoker.js"), "bin/macos-run-invoker.js");
+        _ = payload.addCopyFile(b.path("runner/src/Misc/layoutbin/macos-run-invoker.js"), "bin/macos-run-invoker.js");
 
     _ = payload.add("VERSION", b.fmt("{s}\n", .{runner_version}));
-    _ = payload.addCopyFile(b.path("vendor/actions-runner/LICENSE"), "LICENSE");
+    _ = payload.addCopyFile(b.path("runner/LICENSE"), "LICENSE");
 
     return payload.getDirectory();
 }
