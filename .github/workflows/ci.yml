@@ -61,13 +61,13 @@ jobs:
       matrix:
         include:
           - os: windows
-            arch: x86_64
+            arch: amd64
             runner: windows-latest
-          - os: macos
-            arch: aarch64
+          - os: darwin
+            arch: arm64
             runner: macos-15
           - os: linux
-            arch: x86_64
+            arch: amd64
             runner: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -82,8 +82,8 @@ jobs:
           TEST_ARCH: ${{ matrix.arch }}
         run: |
           case "$TEST_ARCH" in
-            x86_64) qemu_package=qemu-system-x86 ;;
-            aarch64) qemu_package=qemu-system-arm ;;
+            amd64) qemu_package=qemu-system-x86 ;;
+            arm64) qemu_package=qemu-system-arm ;;
             *) echo "Unsupported VM architecture: $TEST_ARCH" >&2; exit 1 ;;
           esac
           sudo apt-get update

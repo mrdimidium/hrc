@@ -34,7 +34,7 @@ case $hrc_os in
         hrc_config_dir=/etc/hrc; hrc_state_dir=/var/lib/hrc; hrc_log_dir=/var/log/hrc
         ;;
     Darwin)
-        hrc_target_os=macos
+        hrc_target_os=darwin
         hrc_config_dir=/usr/local/etc/hrc
         hrc_state_dir='/Library/Application Support/hrc'; hrc_log_dir=/Library/Logs/hrc
         ;;
@@ -47,11 +47,11 @@ hrc_config="$hrc_config_dir/hrc.zon"
 hrc_arch() {
     machine=$(uname -m)
     case $machine in
-        amd64|x86_64) printf '%s\n' x86_64 ;;
-        arm64|aarch64) printf '%s\n' aarch64 ;;
-        s390x|loongarch64|powerpc64le) printf '%s\n' "$machine" ;;
-        ppc64le) printf '%s\n' powerpc64le ;;
-        riscv64) printf '%s\n' riscv64 ;;
+        amd64|x86_64) printf '%s\n' amd64 ;;
+        arm64|aarch64) printf '%s\n' arm64 ;;
+        s390x|loong64|ppc64le|riscv64) printf '%s\n' "$machine" ;;
+        loongarch64) printf '%s\n' loong64 ;;
+        powerpc64le) printf '%s\n' ppc64le ;;
         *) echo "hrc: unsupported architecture: $machine" >&2; return 1 ;;
     esac
 }

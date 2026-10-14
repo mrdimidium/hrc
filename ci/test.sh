@@ -13,7 +13,7 @@ arch=$1
 os=$2
 
 case $os in
-linux | macos) extension= ;;
+linux | darwin) extension= ;;
 windows) extension=.exe ;;
 *)
   echo "Unsupported test OS: $os" >&2
@@ -27,7 +27,7 @@ expected=$(awk -v name="$name" 'substr($0, 67) == name { print substr($0, 1, 64)
 
 case $os in
 linux | windows) actual=$(sha256sum "$tests") ;;
-macos) actual=$(shasum -a 256 "$tests") ;;
+darwin) actual=$(shasum -a 256 "$tests") ;;
 esac
 
 actual=${actual%% *}

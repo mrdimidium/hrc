@@ -82,11 +82,11 @@ foreach ($file in @('hrc.exe', 'control.ps1', 'TARGET', 'runner/VERSION', 'runne
     }
 }
 $target = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'TARGET') -Raw).Trim()
-if ($target -notmatch '^(x86_64|aarch64)-windows$') { throw "Unsupported archive target: $target" }
+if ($target -notmatch '^(amd64|arm64)-windows$') { throw "Unsupported archive target: $target" }
 if (-not $Staging) {
     $machine = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITEW6432')
     if (-not $machine) { $machine = $env:PROCESSOR_ARCHITECTURE }
-    $arch = switch ($machine) { 'AMD64' { 'x86_64' }; 'ARM64' { 'aarch64' }; default { throw "Unsupported architecture: $machine" } }
+    $arch = switch ($machine) { 'AMD64' { 'amd64' }; 'ARM64' { 'arm64' }; default { throw "Unsupported architecture: $machine" } }
     if ($target -ne "$arch-windows") { throw "Archive target $target does not match $arch-windows" }
 }
 $runnerVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'runner/VERSION') -Raw).Trim()

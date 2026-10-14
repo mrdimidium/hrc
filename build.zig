@@ -11,6 +11,18 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const arch_name = switch (target.result.cpu.arch) {
+        .x86_64 => "amd64",
+        .aarch64 => "arm64",
+        .powerpc64le => "ppc64le",
+        .loongarch64 => "loong64",
+        else => @tagName(target.result.cpu.arch),
+    };
+    const os_name = switch (target.result.os.tag) {
+        .macos => "darwin",
+        else => @tagName(target.result.os.tag),
+    };
+
     const strip = b.option(bool, "strip", "Strip debug symbols") orelse true;
 
     const base = b.option([]const u8, "version", "Override version from build.zig.zon") orelse
@@ -90,7 +102,7 @@ pub fn build(b: *std.Build) !void {
     }
     for ([_][]const u8{ "README.md", "LICENSE", "pkg/hrc.zon", "LICENSES/BSD-3-Clause.txt", "LICENSES/CC-BY-4.0.txt" }) |file|
         _ = files.addCopyFile(b.path(file), file);
-    _ = files.add("TARGET", b.fmt("{s}-{s}\n", .{ @tagName(target.result.cpu.arch), @tagName(target.result.os.tag) }));
+    _ = files.add("TARGET", b.fmt("{s}-{s}\n", .{ arch_name, os_name }));
 
     const services: []const []const u8 = switch (target.result.os.tag) {
         .linux => &.{ "hrc.systemd", "hrc.alpine" },
@@ -129,7 +141,7 @@ pub fn build(b: *std.Build) !void {
     }
 
     const name = b.fmt("hrc-{s}-{s}-{f}.tar.gz", .{
-        @tagName(target.result.cpu.arch), @tagName(target.result.os.tag), version,
+        arch_name, os_name, version,
     });
 
     const pack = b.addSystemCommand(&.{ "tar", "-czf" });
@@ -151,7 +163,7 @@ pub fn build(b: *std.Build) !void {
 
     const tests = b.addTest(.{ .root_module = exe.root_module });
     const test_name = b.fmt("hrc-{s}-{s}{s}", .{
-        @tagName(target.result.cpu.arch), @tagName(target.result.os.tag),
+        arch_name,                   os_name,
         if (windows) ".exe" else "",
     });
     b.step("test-build", "Build tests for execution on the selected target").dependOn(

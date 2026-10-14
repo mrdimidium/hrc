@@ -80,7 +80,7 @@ if [ -f "$payload/INIT" ]; then
 fi
 
 case $target in
-    x86_64-linux|aarch64-linux|x86_64-macos|aarch64-macos)
+    amd64-linux|arm64-linux|amd64-darwin|arm64-darwin)
         for file in VERSION LICENSE bin/Runner.Listener bin/Runner.Worker bin/hashFiles/index.js externals/node24/bin/node; do
             [ -r "$bundle/runner/$file" ] || {
                 echo "hrc: incomplete release archive: missing runner/$file" >&2; exit 1

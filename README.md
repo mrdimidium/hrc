@@ -27,12 +27,12 @@ macOS / Linux:
 
 ```sh
 case $(uname -s) in
-    Darwin) os=macos ;;
+    Darwin) os=darwin ;;
     Linux) os=linux ;;
 esac
 case $(uname -m) in
-    x86_64) arch=x86_64 ;;
-    arm64|aarch64) arch=aarch64 ;;
+    x86_64) arch=amd64 ;;
+    arm64|aarch64) arch=arm64 ;;
 esac
 
 gh release download --repo mrdimidium/hrc --pattern "hrc-$arch-$os-*.tar.gz" --pattern SHASUMS256.txt
@@ -61,7 +61,7 @@ sudo ./control remove
 Windows (PowerShell as Administrator):
 
 ```powershell
-$arch = switch ($machine) { AMD64 { 'x86_64' } ARM64 { 'aarch64' } }
+$arch = switch ($machine) { AMD64 { 'amd64' } ARM64 { 'arm64' } }
 $machine = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 
 gh release download --repo mrdimidium/hrc --pattern "hrc-$arch-windows-*.tar.gz" --pattern SHASUMS256.txt

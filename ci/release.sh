@@ -7,7 +7,7 @@ set -euo pipefail
 (cd zig-out/release && sha256sum --check SHASUMS256.txt)
 
 # All targets are built for coverage; publish only supported bundled-runner targets.
-archives=(zig-out/release/hrc-{x86_64,aarch64}-{linux,macos,windows}-"$HRC_VERSION".tar.gz)
+archives=(zig-out/release/hrc-{amd64,arm64}-{linux,darwin,windows}-"$HRC_VERSION".tar.gz)
 (cd zig-out/release && sha256sum "${archives[@]##*/}" > SHASUMS256.txt)
 
 if [ "$GITHUB_REF" = refs/heads/main ]; then
