@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+load("//tools:platforms.bzl", "PLATFORMS")
+
+exports_files(["go.mod", "go.sum"])
+
+alias(
+    name = "hrc",
+    actual = "//cmd:hrc",
+    visibility = ["//visibility:public"],
+)
+
+[config_setting(
+    name = "host_" + arch + "_" + os,
+    constraint_values = [
+        "@platforms//cpu:" + {
+            "amd64": "x86_64",
+            "arm64": "aarch64",
+        }[arch],
+        "@platforms//os:" + ("osx" if os == "darwin" else os),
+    ],
+    visibility = ["//visibility:public"],
+) for arch, os in PLATFORMS]

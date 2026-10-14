@@ -13,3 +13,6 @@ zig-out/
 zig-pkg/
 
 /hrc/
+
+# Bazel output symlinks.
+/bazel-*

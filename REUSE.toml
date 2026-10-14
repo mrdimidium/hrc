@@ -9,6 +9,7 @@ path = [
   ".gitignore",
   ".gitmodules",
   ".mailmap",
+  "VERSION",
   "go.mod",
   "go.sum",
   "mise.lock",
