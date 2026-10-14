@@ -9,6 +9,8 @@ path = [
   ".gitignore",
   ".gitmodules",
   ".mailmap",
+  "go.mod",
+  "go.sum",
   "mise.lock",
 ]
 precedence = "aggregate"
