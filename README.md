@@ -97,16 +97,3 @@ licensed under [CC-BY-4.0](./LICENSES/CC-BY-4.0.txt).
 
 The bundled GitHub runner is MIT licensed; its license and .NET dependency
 notices are included in the runner payload.
-
-## Building the runner
-
-```sh
-bazel build //runner
-# Build a release archive for the current host:
-bazel build //:archives
-```
-
-Bazel runs the upstream `dev.sh layout Release` in a temporary Git checkout.
-The script installs its pinned .NET SDK and downloads its dependencies. Builds
-require network access and run locally; the source submodule stays unchanged.
-Linux, macOS and Windows releases are built on their respective hosts in CI.

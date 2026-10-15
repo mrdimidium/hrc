@@ -8,6 +8,12 @@ buildifier_tool(
     visibility = ["//visibility:public"],
 )
 
+buildifier_tool(
+    name = "buildifier_lint",
+    lint_only = True,
+    visibility = ["//visibility:public"],
+)
+
 BZLS = ["BUILD.bazel"] + glob(["*.bzl"])
 
 filegroup(

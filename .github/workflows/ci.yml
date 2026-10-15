@@ -57,15 +57,16 @@ jobs:
         env:
           BAZEL_SH: ${{ matrix.os == 'windows' && 'C:/Program Files/Git/bin/bash.exe' || 'bash' }}
           TARGET_OS: ${{ matrix.os }}
+          MSYS2_ARG_CONV_EXCL: "//"
         run: |
-          bazel build //:archives --jobs=2
-          target=$(tr -d '\r\n' < bazel-bin/TARGET)
+          bazel build //cmd:release --jobs=2
+          target=$(tar -xOf bazel-bin/cmd/release.tar.gz ./TARGET | tr -d '\r\n')
           [[ "$target" == *-"$TARGET_OS" ]]
           version=$(awk '$1 == "STABLE_HRC_VERSION" { print $2 }' bazel-out/stable-status.txt)
           : "${version:?Missing STABLE_HRC_VERSION}"
           archive="hrc-$target-$version.tar.gz"
           mkdir -p dist/release
-          cp bazel-bin/release.tar.gz "dist/release/$archive"
+          cp bazel-bin/cmd/release.tar.gz "dist/release/$archive"
           cd dist/release
           if command -v sha256sum >/dev/null; then
             digest=$(sha256sum --binary "$archive")

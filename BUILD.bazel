@@ -1,11 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
 # SPDX-License-Identifier: BSD-3-Clause
 
-load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@gazelle//:def.bzl", "gazelle")
-load("@rules_pkg//pkg:mappings.bzl", "REMOVE_BASE_DIRECTORY", "pkg_attributes", "pkg_files", "strip_prefix")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//tools:platforms.bzl", "ARCH", "OS")
+
+filegroup(
+    name = "docs",
+    srcs = ["README.md"],
+    visibility = ["//cmd:__pkg__"],
+)
+
+filegroup(
+    name = "licenses",
+    srcs = ["LICENSE"] + glob(["LICENSES/*"]),
+    visibility = ["//cmd:__pkg__"],
+)
 
 # gazelle:prefix gilti.dev/hrc
 # gazelle:exclude dist
@@ -25,6 +33,7 @@ filegroup(
         "//runner:starlark_sources",
         "//tools:starlark_sources",
         "//tools/format:BUILD.bazel",
+        "//tools/rules_service:starlark_sources",
     ],
     tags = [
         "lint-with-buildifier",
@@ -41,114 +50,5 @@ alias(
 alias(
     name = "hrc",
     actual = "//cmd:hrc",
-    visibility = ["//visibility:public"],
-)
-
-pkg_files(
-    name = "release_docs",
-    srcs = [
-        "LICENSE",
-        "LICENSES/BSD-3-Clause.txt",
-        "LICENSES/CC-BY-4.0.txt",
-        "README.md",
-        "pkg/hrc.json",
-    ],
-    strip_prefix = strip_prefix.from_root(),
-    tags = ["manual"],
-)
-
-write_file(
-    name = "target",
-    out = "TARGET",
-    content = [
-        ARCH + "-" + OS,
-        "",
-    ],
-    tags = ["manual"],
-)
-
-pkg_files(
-    name = "controller",
-    srcs = ["//cmd:hrc"],
-    attributes = pkg_attributes(mode = "0755"),
-    renames = {"//cmd:hrc": "hrc.exe" if OS == "windows" else "hrc"},
-    tags = ["manual"],
-)
-
-pkg_files(
-    name = "runner_files",
-    srcs = ["//runner"],
-    attributes = pkg_attributes(mode = "0755"),
-    prefix = "runner",
-    renames = {"//runner": REMOVE_BASE_DIRECTORY},
-    tags = ["manual"],
-)
-
-pkg_files(
-    name = "target_file",
-    srcs = [":target"],
-    renames = {":target": "TARGET"},
-    tags = ["manual"],
-)
-
-pkg_files(
-    name = "control",
-    srcs = ["pkg/control.ps1" if OS == "windows" else "pkg/control"],
-    attributes = pkg_attributes(mode = "0644" if OS == "windows" else "0755"),
-    renames = {"pkg/control.ps1" if OS == "windows" else "pkg/control": "control.ps1" if OS == "windows" else "control"},
-    tags = ["manual"],
-)
-
-pkg_files(
-    name = "services",
-    srcs = ["pkg/services/" + {
-        "darwin": "org.hrc.plist",
-        "linux": "hrc.systemd",
-        "windows": "hrc.winsw.xml",
-    }[OS]],
-    strip_prefix = strip_prefix.from_root(),
-    tags = ["manual"],
-)
-
-pkg_files(
-    name = "scripts",
-    srcs = [] if OS == "windows" else ["pkg/scripts/" + hook + ".sh" for hook in [
-        "common",
-        "preinstall",
-        "postinstall",
-        "preremove",
-        "postremove",
-    ]] + (["pkg/services/hrc.alpine"] if OS == "linux" else []),
-    attributes = pkg_attributes(mode = "0755"),
-    strip_prefix = strip_prefix.from_root(),
-    tags = ["manual"],
-)
-
-pkg_tar(
-    name = "release",
-    srcs = [
-        ":control",
-        ":controller",
-        ":release_docs",
-        ":runner_files",
-        ":scripts",
-        ":services",
-        ":target_file",
-    ],
-    allow_duplicates_with_different_content = False,
-    extension = "tar.gz",
-    mode = "",
-    package_dir = ".",
-    stamp = 0,
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
-filegroup(
-    name = "archives",
-    srcs = [
-        ":release",
-    ],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
 )

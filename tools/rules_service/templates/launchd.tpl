@@ -4,23 +4,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key>
-  <string>org.hrc</string>
+  <string>@LABEL@</string>
 
   <key>UserName</key>
-  <string>hrc</string>
+  <string>@USER@</string>
 
   <key>GroupName</key>
-  <string>hrc</string>
+  <string>@GROUP@</string>
 
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/hrc</string>
-    <string>-config</string>
-    <string>/usr/local/etc/hrc/hrc.json</string>
+@ARGUMENTS@
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Library/Application Support/hrc</string>
+  <string>@STATE@</string>
 
   <!-- Explicitly enable after configuring providers and secrets. -->
   <key>Disabled</key>
@@ -45,8 +43,8 @@
   <integer>60</integer>
 
   <key>StandardOutPath</key>
-  <string>/Library/Logs/hrc/stdout.log</string>
+  <string>@LOG@/stdout.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/Library/Logs/hrc/stderr.log</string>
+  <string>@LOG@/stderr.log</string>
 </dict></plist>

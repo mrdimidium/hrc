@@ -4,8 +4,9 @@
 
 set -eu
 . "$(dirname "$0")/common.sh"
-hrc_require_root
+require_root
+select_init
 
-if ! hrc_staging && [ "$hrc_os" = Linux ] && [ "${HRC_INIT:-}" = systemd ] && [ -d /run/systemd/system ]; then
+if [ "$os" = Linux ] && [ "$init" = systemd ] && [ -d /run/systemd/system ]; then
     systemctl daemon-reload
 fi

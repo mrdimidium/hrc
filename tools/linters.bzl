@@ -4,8 +4,10 @@
 """Declare the repository's rules_lint aspects."""
 
 load("@aspect_rules_lint//lint:buildifier.bzl", "lint_buildifier_aspect")
+load(":tools.bzl", "BUILDIFIER_ARGS")
 
 buildifier = lint_buildifier_aspect(
-    binary = Label("//tools:buildifier"),
+    args = BUILDIFIER_ARGS,
+    binary = Label("//tools:buildifier_lint"),
     warnings = "all",
 )

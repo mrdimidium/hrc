@@ -1,0 +1,137 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+set -eu
+umask 0077
+
+case ${1:-help} in
+    install|remove) action=$1 ;;
+    help|-h|--help)
+        echo 'Usage: control install | remove'
+        echo 'Install from an extracted release; configure hrc.json before starting the service.'
+        echo 'Remove retains accounts, configuration, secrets and build data.'
+        exit 0
+        ;;
+    *) echo "hrc: unknown action: $1" >&2; exit 1 ;;
+esac
+[ "$#" = 1 ] || { echo 'Usage: control install | remove' >&2; exit 1; }
+
+bundle=$(CDPATH='' cd -P "$(dirname "$0")" && pwd)
+. "$(dirname "$0")/common.sh"
+require_root
+
+if [ "$action" = remove ]; then
+    if [ ! -f "$payload/INIT" ]; then
+        echo 'hrc: no installation managed by control was found'
+        exit 0
+    fi
+    IFS= read -r SERVICE_INIT < "$payload/INIT"
+    export SERVICE_INIT
+    select_init
+    sh "$payload/scripts/preremove.sh" remove
+    rm -f "$binary" "$service"
+    sh "$payload/scripts/postremove.sh" remove
+    for hook in preinstall postinstall preremove postremove; do
+        rm -f "$payload/scripts/$hook.sh"
+    done
+    rm -f "$payload/control" "$payload/TARGET" "$payload/INIT"
+    # Remove our empty directories, retaining any administrator-added files.
+    rmdir "$payload/scripts" "$payload" 2>/dev/null || true
+    echo 'hrc: removed; configuration, secrets and build data were retained'
+    exit 0
+fi
+
+# Validate the complete bundle and platform before stopping services or creating accounts.
+[ -r "$bundle/TARGET" ] || { echo 'hrc: incomplete release archive: missing TARGET' >&2; exit 1; }
+IFS= read -r target < "$bundle/TARGET"
+case $target in
+    *-"$target_os") ;;
+    *) echo "hrc: archive target $target does not match $os" >&2; exit 1 ;;
+esac
+arch=$(arch)
+[ "$target" = "$arch-$target_os" ] || {
+    echo "hrc: archive target $target does not match $arch-$target_os" >&2
+    exit 1
+}
+select_init
+export SERVICE_INIT="$init"
+for file in hrc control TARGET hrc.json \
+    scripts/preinstall.sh scripts/postinstall.sh \
+    scripts/preremove.sh scripts/postremove.sh "services/$service_source"; do
+    [ -f "$bundle/$file" ] && [ -r "$bundle/$file" ] || {
+        echo "hrc: incomplete release archive: missing $file" >&2
+        exit 1
+    }
+done
+if [ -f "$payload/INIT" ]; then
+    IFS= read -r previous_init < "$payload/INIT"
+    [ "$previous_init" = "$init" ] || {
+        echo 'hrc: remove the previous installation before changing init systems' >&2
+        exit 1
+    }
+fi
+
+for file in VERSION LICENSE bin/Runner.Listener bin/Runner.Worker bin/hashFiles/index.js externals/node24/bin/node; do
+    [ -r "$bundle/runner/$file" ] || {
+        echo "hrc: incomplete release archive: missing runner/$file" >&2; exit 1
+    }
+done
+IFS= read -r runner_version < "$bundle/runner/VERSION"
+if ! expr "$runner_version" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null; then
+    echo 'hrc: invalid bundled runner version' >&2; exit 1
+fi
+runner_bin="$state_dir/bin"
+runner="$runner_bin/github-bundled-$runner_version"
+if [ -e "$runner" ] || [ -L "$runner" ]; then
+    [ -f "$runner/.complete" ] && [ "$(cat "$runner/VERSION")" = "$runner_version" ] || {
+        echo "hrc: incomplete runner installation: $runner" >&2; exit 1
+    }
+fi
+sh "$bundle/scripts/preinstall.sh" install
+install_dir 0755 root "$admin_group" "$prefix/bin"
+install_dir 0755 root "$admin_group" "$payload"
+install_dir 0755 root "$admin_group" "$payload/scripts"
+install_dir 0755 root "$admin_group" "$(dirname "$service")"
+
+# Publish a writable versioned installation; never replace a runner in use.
+install_dir 0700 hrc hrc "$runner_bin"
+if [ ! -e "$runner" ]; then
+    runner_temporary="$runner.install.$$"
+    trap 'rm -rf "$runner_temporary"' 0
+    trap 'exit 1' 1 2 15
+    mkdir "$runner_temporary"
+    cp -R "$bundle/runner/." "$runner_temporary/"
+    : > "$runner_temporary/.complete"
+    chmod -R u=rwX,go= "$runner_temporary"
+    chown -R hrc:hrc "$runner_temporary"
+    mv "$runner_temporary" "$runner"
+    trap - 0 1 2 15
+fi
+# Record the selected version after its installation is complete.
+runner_version_file="$runner_bin/VERSION"
+printf '%s\n' "$runner_version" > "$runner_version_file"
+chmod 0600 "$runner_version_file"
+chown hrc:hrc "$runner_version_file"
+install_file 0755 "$bundle/control" "$payload/control"
+install_file 0644 "$bundle/TARGET" "$payload/TARGET"
+for hook in preinstall postinstall preremove postremove; do
+    install_file 0755 "$bundle/scripts/$hook.sh" "$payload/scripts/$hook.sh"
+done
+printf '%s\n' "$init" > "$payload/INIT"
+chmod 0644 "$payload/INIT"
+
+# Replace the binary by rename, so a failed copy never truncates an existing binary.
+temporary="$binary.new.$$"
+trap 'rm -f "$temporary"' 0
+trap 'exit 1' 1 2 15
+install_file 0755 "$bundle/hrc" "$temporary"
+mv -f "$temporary" "$binary"
+trap - 0 1 2 15
+install_file "$service_mode" "$bundle/services/$service_source" "$service"
+
+if [ ! -e "$config" ] && [ ! -L "$config" ]; then
+    install_file 0640 "$bundle/hrc.json" "$config"
+fi
+sh "$bundle/scripts/postinstall.sh" install
+echo "hrc: installed; removal command: $payload/control remove"

@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//tools:platforms.bzl", "ARCH", "OS")
+load("//tools/rules_service:service.bzl", "service")
 
 exports_files(["BUILD.bazel"])
 
@@ -33,4 +35,22 @@ go_test(
     size = "small",
     srcs = glob(["*_test.go"]),  # keep
     embed = [":cmd_lib"],
+)
+
+service(
+    name = "release",
+    service = "hrc",
+    description = "Hosted Runner Controller",
+    deps = ["//:docs", "//:licenses", "//runner"],
+
+    os = OS,
+    arch = ARCH,
+
+    bin = ":hrc",
+    args = ["-config", "{config}"],
+    config = "pkg/hrc.json",
+    installer = "pkg/control.ps1" if OS == "windows" else "pkg/control",
+
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
 )

@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+exports_files([
+    "archive.bzl",
+    "scripts.bzl",
+    "scripts/common.sh",
+    "service.bzl",
+] + glob(["templates/*.tpl"]))
+
+filegroup(
+    name = "starlark_sources",
+    srcs = [
+        "BUILD.bazel",
+        "archive.bzl",
+        "scripts.bzl",
+        "service.bzl",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "script_templates",
+    srcs = glob(
+        ["scripts/*.sh"],
+        exclude = ["scripts/common.sh"],
+    ),
+)

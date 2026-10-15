@@ -11,7 +11,7 @@ path = [
   ".mailmap",
   "MODULE.bazel.lock",
   "VERSION",
-  "pkg/hrc.json",
+  "cmd/pkg/hrc.json",
   "go.mod",
   "go.sum",
   "mise.lock",

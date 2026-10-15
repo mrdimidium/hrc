@@ -2,17 +2,17 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 [Unit]
-Description=Hosted Runner Controller
+Description=@DESCRIPTION@
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
 Type=exec
-User=hrc
-Group=hrc
-WorkingDirectory=/var/lib/hrc
-ExecStart=/usr/local/bin/hrc -config /etc/hrc/hrc.json
+User=@USER@
+Group=@GROUP@
+WorkingDirectory=@STATE@
+ExecStart=@COMMAND@
 Restart=on-failure
 RestartSec=10
 KillMode=control-group

@@ -2,12 +2,12 @@
 <!-- SPDX-FileCopyrightText: 2026 Nikolay Govorov -->
 <!-- SPDX-License-Identifier: BSD-3-Clause -->
 <service>
-  <id>hrc</id>
-  <name>hrc</name>
-  <description>Controller for ephemeral GitHub runners</description>
-  <!-- control.ps1 fills these paths for the selected installation directories. -->
-  <executable>hrc.exe</executable>
-  <arguments>-config hrc.json</arguments>
+  <id>@NAME@</id>
+  <name>@NAME@</name>
+  <description>@DESCRIPTION@</description>
+  <!-- The installer fills these paths for the selected installation directories. -->
+  <executable>@EXECUTABLE@</executable>
+  <arguments>@ARGUMENTS@</arguments>
   <workingdirectory>.</workingdirectory>
   <logpath>logs</logpath>
   <log mode="roll" />

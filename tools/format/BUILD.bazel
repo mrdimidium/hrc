@@ -2,10 +2,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 load("@aspect_rules_lint//format:defs.bzl", "format_multirun")
+load("//tools:tools.bzl", "BUILDIFIER_ARGS")
 
 format_multirun(
     name = "format",
     starlark = "//tools:buildifier",
+    starlark_fix_args = ["-mode=fix"] + BUILDIFIER_ARGS,
+    starlark_check_args = ["-mode=check"] + BUILDIFIER_ARGS,
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
