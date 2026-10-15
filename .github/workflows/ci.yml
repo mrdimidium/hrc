@@ -19,7 +19,18 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-latest
+          - os: darwin
+            runner: macos-15
+          - os: windows
+            runner: windows-latest
     timeout-minutes: 90
     permissions:
       contents: read
@@ -33,20 +44,23 @@ jobs:
           fetch-depth: 0
           submodules: true
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: bazel uv
       - id: build
+        shell: bash
+        env:
+          BAZEL_SH: ${{ matrix.os == 'windows' && 'C:/Program Files/Git/bin/bash.exe' || 'bash' }}
         run: bash ci/build.sh
       - name: Attest build archives
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/release-'))
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-checksums: zig-out/release/SHASUMS256.txt
+          subject-checksums: dist/release/SHASUMS256-${{ matrix.os }}.txt
           create-storage-record: false
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: build
-          path: |
-            zig-out/release/
-            zig-out/tests/
+          name: build-${{ matrix.os }}
+          path: dist/release/
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -71,37 +85,11 @@ jobs:
             runner: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          name: build
-          path: zig-out
-      - name: Install VM dependencies
-        if: matrix.release != ''
-        shell: bash
-        env:
-          TEST_ARCH: ${{ matrix.arch }}
-        run: |
-          case "$TEST_ARCH" in
-            amd64) qemu_package=qemu-system-x86 ;;
-            arm64) qemu_package=qemu-system-arm ;;
-            *) echo "Unsupported VM architecture: $TEST_ARCH" >&2; exit 1 ;;
-          esac
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            "$qemu_package" zstd openssh-client
+          install_args: bazel
       - name: Run tests
-        shell: bash
-        env:
-          TEST_OS: ${{ matrix.os }}
-          TEST_ARCH: ${{ matrix.arch }}
-          TEST_RELEASE: ${{ matrix.release }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          args=("$TEST_ARCH" "$TEST_OS")
-          if [ -n "$TEST_RELEASE" ]; then
-            args+=("$TEST_RELEASE")
-          fi
-          sh ci/test.sh "${args[@]}"
+        run: bazel test //cmd:cmd_test --nostamp --workspace_status_command= --test_output=errors
 
   release:
     needs: [build, test]
@@ -113,8 +101,14 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: build
-          path: zig-out
+          pattern: build-*
+          merge-multiple: true
+          path: dist/release
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: uv
+      - name: Verify and merge build artifacts
+        run: uv run --no-project --python 3.13 python tools/release.py merge
       - run: bash ci/release.sh
         env:
           GH_TOKEN: ${{ github.token }}

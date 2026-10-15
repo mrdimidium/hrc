@@ -16,7 +16,7 @@
   <array>
     <string>/usr/local/bin/hrc</string>
     <string>-config</string>
-    <string>/usr/local/etc/hrc/hrc.zon</string>
+    <string>/usr/local/etc/hrc/hrc.json</string>
   </array>
 
   <key>WorkingDirectory</key>

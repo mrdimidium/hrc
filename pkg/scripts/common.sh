@@ -42,7 +42,7 @@ case $hrc_os in
 esac
 hrc_binary="$hrc_prefix/bin/hrc"
 hrc_payload="$hrc_prefix/share/hrc"
-hrc_config="$hrc_config_dir/hrc.zon"
+hrc_config="$hrc_config_dir/hrc.json"
 
 hrc_arch() {
     machine=$(uname -m)

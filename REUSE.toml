@@ -10,6 +10,7 @@ path = [
   ".gitmodules",
   ".mailmap",
   "VERSION",
+  "pkg/hrc.json",
   "go.mod",
   "go.sum",
   "mise.lock",

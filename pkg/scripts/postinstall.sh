@@ -27,15 +27,15 @@ case $os in
     Linux)
         if [ "$hrc_init" = systemd ]; then
             if [ -d /run/systemd/system ]; then systemctl daemon-reload; fi
-            echo 'hrc: configure /etc/hrc/hrc.zon, then systemctl enable --now hrc.service'
+            echo 'hrc: configure /etc/hrc/hrc.json, then systemctl enable --now hrc.service'
         else
-            echo 'hrc: configure /etc/hrc/hrc.zon, then rc-update add hrc default and rc-service hrc start'
+            echo 'hrc: configure /etc/hrc/hrc.json, then rc-update add hrc default and rc-service hrc start'
         fi
         ;;
     Darwin)
         plist=/Library/LaunchDaemons/org.hrc.plist
         if [ -f "$plist" ]; then plutil -lint "$plist"; fi
-        echo 'hrc: configure /usr/local/etc/hrc/hrc.zon, then launchctl enable system/org.hrc'
+        echo 'hrc: configure /usr/local/etc/hrc/hrc.json, then launchctl enable system/org.hrc'
         echo 'hrc: start with launchctl bootstrap system /Library/LaunchDaemons/org.hrc.plist'
         ;;
     *) echo 'hrc: unsupported OS' >&2; exit 1 ;;

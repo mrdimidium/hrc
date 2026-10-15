@@ -17,7 +17,7 @@ Set-StrictMode -Version Latest
 
 if ($Action -eq 'help') {
     Write-Output 'Usage: .\control.ps1 install -WinSWPath <downloaded WinSW.exe> | remove'
-    Write-Output 'Configure hrc.zon before starting the hrc service. Removal retains data and configuration.'
+    Write-Output 'Configure hrc.json before starting the hrc service. Removal retains data and configuration.'
     return
 }
 if (-not $Staging) {
@@ -33,7 +33,7 @@ $DataRoot = [IO.Path]::GetFullPath($DataRoot)
 if ($InstallRoot -eq $DataRoot) { throw 'Program and data directories must be separate.' }
 $wrapper = Join-Path $InstallRoot 'hrc-service.exe'
 $receipt = Join-Path $InstallRoot 'INSTALL.json'
-$config = Join-Path $DataRoot 'hrc.zon'
+$config = Join-Path $DataRoot 'hrc.json'
 
 function Invoke-Wrapper([string] $Command) {
     & $wrapper $Command
@@ -76,7 +76,7 @@ if ($Action -eq 'remove') {
     return
 }
 
-foreach ($file in @('hrc.exe', 'control.ps1', 'TARGET', 'runner/VERSION', 'runner/LICENSE', 'runner/bin/Runner.Listener.exe', 'runner/bin/Runner.Worker.exe', 'runner/bin/hashFiles/index.js', 'runner/externals/node24/bin/node.exe', 'pkg/hrc.zon', 'pkg/services/hrc.winsw.xml')) {
+foreach ($file in @('hrc.exe', 'control.ps1', 'TARGET', 'runner/VERSION', 'runner/LICENSE', 'runner/bin/Runner.Listener.exe', 'runner/bin/Runner.Worker.exe', 'runner/bin/hashFiles/index.js', 'runner/externals/node24/bin/node.exe', 'pkg/hrc.json', 'pkg/services/hrc.winsw.xml')) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $file) -PathType Leaf)) {
         throw "Incomplete archive: missing $file"
     }
@@ -147,7 +147,7 @@ $versionFile = Join-Path $runnerBin 'VERSION'
 [IO.File]::WriteAllText($versionFile, $runnerVersion + "`n", (New-Object Text.UTF8Encoding($false)))
 if ($WinSWPath -ne $wrapper) { Copy-Item -LiteralPath $WinSWPath -Destination $wrapper -Force }
 if (-not (Test-Path -LiteralPath $config)) {
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'pkg/hrc.zon') -Destination $config
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'pkg/hrc.json') -Destination $config
 }
 [xml] $xml = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'pkg/services/hrc.winsw.xml') -Raw
 $xml.service.executable = Join-Path $InstallRoot 'hrc.exe'

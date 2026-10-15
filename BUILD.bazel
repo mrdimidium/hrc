@@ -1,7 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
 # SPDX-License-Identifier: BSD-3-Clause
 
-load("//tools:platforms.bzl", "PLATFORMS")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_pkg//pkg:mappings.bzl", "REMOVE_BASE_DIRECTORY", "pkg_attributes", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//tools:platforms.bzl", "OSES", "PLATFORMS")
 
 exports_files(["go.mod", "go.sum"])
 
@@ -15,6 +18,128 @@ alias(
     name = "runner",
     actual = "//runner",
     tags = ["manual"],
+)
+
+alias(
+    name = "release",
+    actual = select({
+        "//:host_" + arch + "_" + os: "//:" + arch + "_" + os
+        for arch, os in PLATFORMS
+    }),
+    tags = ["manual"],
+)
+
+pkg_files(
+    name = "release_docs",
+    srcs = [
+        "LICENSE",
+        "LICENSES/BSD-3-Clause.txt",
+        "LICENSES/CC-BY-4.0.txt",
+        "README.md",
+        "pkg/hrc.json",
+    ],
+    strip_prefix = strip_prefix.from_root(),
+    tags = ["manual"],
+)
+
+[genrule(
+    name = "target_" + arch + "_" + os,
+    outs = [arch + "_" + os + "/TARGET"],
+    cmd = "echo " + arch + "-" + os + " > $@",
+    tags = ["manual"],
+) for arch, os in PLATFORMS]
+
+[pkg_files(
+    name = "controller_" + arch + "_" + os,
+    srcs = ["//cmd:" + arch + "_" + os],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {"//cmd:" + arch + "_" + os: "hrc.exe" if os == "windows" else "hrc"},
+    tags = ["manual"],
+) for arch, os in PLATFORMS]
+
+[pkg_files(
+    name = "runner_files_" + arch + "_" + os,
+    srcs = ["//runner:payload_" + arch + "_" + os],
+    attributes = pkg_attributes(mode = "0755"),
+    prefix = "runner",
+    renames = {"//runner:payload_" + arch + "_" + os: REMOVE_BASE_DIRECTORY},
+    tags = ["manual"],
+) for arch, os in PLATFORMS]
+
+[pkg_files(
+    name = "target_file_" + arch + "_" + os,
+    srcs = [":target_" + arch + "_" + os],
+    renames = {":target_" + arch + "_" + os: "TARGET"},
+    tags = ["manual"],
+) for arch, os in PLATFORMS]
+
+[pkg_files(
+    name = "control_" + os,
+    srcs = ["pkg/control.ps1" if os == "windows" else "pkg/control"],
+    attributes = pkg_attributes(mode = "0644" if os == "windows" else "0755"),
+    renames = {"pkg/control.ps1" if os == "windows" else "pkg/control": "control.ps1" if os == "windows" else "control"},
+    tags = ["manual"],
+) for os in OSES]
+
+[pkg_files(
+    name = "services_" + os,
+    srcs = ["pkg/services/" + {
+        "darwin": "org.hrc.plist",
+        "linux": "hrc.systemd",
+        "windows": "hrc.winsw.xml",
+    }[os]],
+    strip_prefix = strip_prefix.from_root(),
+    tags = ["manual"],
+) for os in OSES]
+
+[pkg_files(
+    name = "scripts_" + os,
+    srcs = ["pkg/scripts/" + hook + ".sh" for hook in [
+        "common",
+        "preinstall",
+        "postinstall",
+        "preremove",
+        "postremove",
+    ]] + (["pkg/services/hrc.alpine"] if os == "linux" else []),
+    attributes = pkg_attributes(mode = "0755"),
+    strip_prefix = strip_prefix.from_root(),
+    tags = ["manual"],
+) for os in OSES if os != "windows"]
+
+[pkg_tar(
+    name = arch + "_" + os,
+    srcs = [
+        ":release_docs",
+        ":controller_" + arch + "_" + os,
+        ":runner_files_" + arch + "_" + os,
+        ":target_file_" + arch + "_" + os,
+        ":control_" + os,
+        ":services_" + os,
+    ] + ([":scripts_" + os] if os != "windows" else []),
+    allow_duplicates_with_different_content = False,
+    extension = "tar.gz",
+    mode = "",
+    package_dir = ".",
+    stamp = 0,
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+) for arch, os in PLATFORMS]
+
+write_file(
+    name = "release_platforms",
+    out = "release_platforms.json",
+    content = [json.encode(PLATFORMS)],
+    tags = ["manual"],
+)
+
+filegroup(
+    name = "archives",
+    srcs = select({"//:host_" + arch + "_" + os: [
+        ":amd64_" + os,
+        ":arm64_" + os,
+    ] for arch, os in PLATFORMS}) + [":release_platforms"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
 )
 
 [config_setting(

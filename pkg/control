@@ -9,7 +9,7 @@ case ${1:-help} in
     install|remove) action=$1 ;;
     help|-h|--help)
         echo 'Usage: control install | remove'
-        echo 'Install from an extracted release; configure hrc.zon before starting the service.'
+        echo 'Install from an extracted release; configure hrc.json before starting the service.'
         echo 'Remove retains accounts, configuration, secrets and build data.'
         exit 0
         ;;
@@ -63,7 +63,7 @@ if ! hrc_staging; then
 fi
 hrc_select_init
 export HRC_INIT="$hrc_init"
-for file in hrc control TARGET pkg/hrc.zon \
+for file in hrc control TARGET pkg/hrc.json \
     pkg/scripts/common.sh pkg/scripts/preinstall.sh pkg/scripts/postinstall.sh \
     pkg/scripts/preremove.sh pkg/scripts/postremove.sh "pkg/services/$hrc_service_source"; do
     [ -f "$bundle/$file" ] && [ -r "$bundle/$file" ] || {
@@ -149,7 +149,7 @@ hrc_install_file "$hrc_service_mode" "$bundle/pkg/services/$hrc_service_source" 
 
 config=$(hrc_path "$hrc_config")
 if [ ! -e "$config" ] && [ ! -L "$config" ]; then
-    hrc_install_file 0640 "$bundle/pkg/hrc.zon" "$hrc_config"
+    hrc_install_file 0640 "$bundle/pkg/hrc.json" "$hrc_config"
 fi
 sh "$bundle/pkg/scripts/postinstall.sh" install
 echo "hrc: installed; removal command: $hrc_payload/control remove"

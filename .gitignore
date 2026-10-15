@@ -1,4 +1,4 @@
-# This file is for zig-specific build artifacts.
+# Local build artifacts.
 # If you have OS-specific or editor-specific files to ignore,
 # such as *.swp or .DS_Store, put those in your global
 # ~/.gitignore and put this in your ~/.gitconfig:
@@ -8,11 +8,10 @@
 #
 # Cheers!
 
-.zig-cache/
-zig-out/
-zig-pkg/
-
 /hrc/
 
 # Bazel output symlinks.
 /bazel-*
+
+# CI release artifacts.
+/dist/

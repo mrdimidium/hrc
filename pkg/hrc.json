@@ -1,0 +1,20 @@
+{
+  "id": "build-01",
+  "dirBin": "bin",
+  "dirBuilds": "jobs",
+  "groups": [
+    {
+      "url": "https://github.com/mrdimidium/hrc",
+      "name": "hrc-builds",
+      "group": "default",
+      "labels": [
+        "linux",
+        "X64"
+      ],
+      "pat": {
+        "type": "env",
+        "value": "GITHUB_TOKEN"
+      }
+    }
+  ]
+}

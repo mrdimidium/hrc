@@ -49,7 +49,7 @@ tar -xzf "$archive" -C hrc-install
 cd hrc-install
 sudo ./control install
 
-# Configure hrc.zon and provider secrets, then start the service using the printed commands.
+# Configure hrc.json and provider secrets, then start the service using the printed commands.
 
 # Upgrade: run from a newly extracted release archive.
 sudo ./control install
@@ -80,7 +80,7 @@ Set-Location hrc-install
 # Download WinSW 2.x: https://github.com/winsw/winsw/tree/v2
 .\control.ps1 install -WinSWPath C:\Downloads\WinSW-x64.exe
 
-# Configure %ProgramData%\hrc\hrc.zon and provider secrets.
+# Configure %ProgramData%\hrc\hrc.json and provider secrets.
 Start-Service hrc
 
 # Upgrade: run from a newly extracted release archive.

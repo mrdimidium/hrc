@@ -6,10 +6,10 @@
 description="Hosted Runner Controller"
 
 command="/usr/local/bin/hrc"
-command_args="-config /etc/hrc/hrc.zon"
+command_args="-config /etc/hrc/hrc.json"
 command_user="hrc:hrc"
 directory="/var/lib/hrc"
-required_files="/etc/hrc/hrc.zon"
+required_files="/etc/hrc/hrc.json"
 
 supervisor="supervise-daemon"
 respawn_delay=10
