@@ -1,0 +1,119 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+"""Local and CI tasks. Keep orchestration and publishing policy in this file."""
+
+load("@std//hash.axl", "sha256")
+
+def _exec(ctx, argv):
+    code = ctx.std.process.command(argv[0]).args(argv[1:]).spawn().wait().code
+    if code != 0:
+        fail("Command failed (%s): %s" % (code, " ".join(argv)))
+
+def _capture(ctx, argv):
+    return ctx.std.process.command(argv[0]).args(argv[1:]).stdout("piped").spawn().wait_with_output()
+
+def _replace(ctx, path):
+    if ctx.std.fs.exists(path):
+        ctx.std.fs.remove_file(path)
+
+def _write(ctx, path, content):
+    ctx.std.fs.create_dir_all(path.rpartition("/")[0] or ".")
+    _replace(ctx, path)
+    ctx.std.fs.write(path, content)
+
+def _sha256(ctx, path):
+    digest = sha256()
+    for chunk in ctx.std.fs.open(path):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+def _checksums(ctx, directory, names):
+    content = "".join([_sha256(ctx, directory + "/" + name) + "  " + name + "\n" for name in sorted(names)])
+    _write(ctx, directory + "/SHASUMS256.txt", content)
+
+def _verify(ctx, directory):
+    for line in ctx.std.fs.read_to_string(directory + "/SHASUMS256.txt").strip().split("\n"):
+        expected, name = line.split("  ", 1)
+        if _sha256(ctx, directory + "/" + name) != expected:
+            fail("SHA256 mismatch: " + name)
+
+def _ci_check(ctx):
+    _exec(ctx, ["reuse", "lint"])
+    _exec(ctx, ["aspect", "lint", "--strategy=hard", "--config=lint", "--", "//:starlark_sources"])
+    return 0
+
+def _gh(ctx, argv):
+    _exec(ctx, ["gh"] + argv)
+
+def _view(ctx, tag):
+    return _capture(ctx, ["gh", "release", "view", tag, "--json", "isDraft,assets"])
+
+def _ci_release(ctx):
+    directory = "dist/release"
+    _verify(ctx, directory)
+    version = ctx.std.env.var("HRC_VERSION") or ctx.std.fs.read_to_string(directory + "/VERSION").strip()
+    names = [line.split("  ", 1)[1] for line in ctx.std.fs.read_to_string(directory + "/SHASUMS256.txt").strip().split("\n")]
+    _checksums(ctx, directory, names)
+    if ctx.args.dry_run:
+        # buildifier: disable=print
+        print("Validated release " + version + ": " + ", ".join(names))
+        return 0
+    ref = ctx.std.env.var("GITHUB_REF") or ""
+    repository = ctx.std.env.var("GH_REPO")
+    commit = ctx.std.env.var("GITHUB_SHA")
+    if not repository or not commit:
+        fail("GH_REPO and GITHUB_SHA are required for publishing")
+    if ref == "refs/heads/main":
+        tag = "dev"
+        endpoint = "repos/" + repository + "/git/refs/tags/" + tag
+        existing = _capture(ctx, ["gh", "api", "repos/" + repository + "/git/ref/tags/" + tag])
+        if existing.status.success:
+            _gh(ctx, ["api", "--method", "PATCH", endpoint, "-f", "sha=" + commit, "-F", "force=true"])
+        else:
+            _gh(ctx, ["api", "--method", "POST", "repos/" + repository + "/git/refs", "-f", "ref=refs/tags/" + tag, "-f", "sha=" + commit])
+        notes = "Development build %s from commit %s." % (version, commit)
+        if _view(ctx, tag).status.success:
+            _gh(ctx, ["release", "edit", tag, "--title", tag, "--notes", notes, "--prerelease", "--latest=false"])
+        else:
+            _gh(ctx, ["release", "create", tag, "--verify-tag", "--title", tag, "--notes", notes, "--prerelease", "--latest=false"])
+    else:
+        if ref != "refs/tags/release-" + version:
+            fail("Release ref does not match version: " + ref)
+        tag = ref[len("refs/tags/"):]
+        existing = _view(ctx, tag)
+        if existing.status.success:
+            if not json.decode(existing.stdout)["isDraft"]:
+                fail("Release %s is already published; refusing to overwrite it." % tag)
+        else:
+            _gh(ctx, ["release", "create", tag, "--verify-tag", "--draft", "--title", version, "--generate-notes"])
+    published = names + ["SHASUMS256.txt"]
+    _gh(ctx, ["release", "upload", tag] + [directory + "/" + name for name in published] + ["--clobber"])
+    if tag == "dev":
+        assets = json.decode(_view(ctx, tag).stdout)["assets"]
+        for asset in assets:
+            if asset["name"] not in published:
+                _gh(ctx, ["release", "delete-asset", tag, asset["name"], "--yes"])
+    else:
+        _gh(ctx, ["release", "edit", tag, "--draft=false"])
+    return 0
+
+# buildifier: disable=unused-variable
+ci_check = task(
+    args = {},
+    group = ["ci"],
+    kind = "check",
+    summary = "Check licenses, rules_lint findings and release regression tests.",
+    implementation = _ci_check,
+)
+
+# buildifier: disable=unused-variable
+ci_release = task(
+    args = {"dry_run": args.boolean(default = False)},
+    group = ["ci"],
+    kind = "release",
+    summary = "Publish verified artifacts, preserving mutable dev and immutable tagged releases.",
+    implementation = _ci_release,
+)
+
+# vim: set filetype=bzl:

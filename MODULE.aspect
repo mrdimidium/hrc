@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+# buildifier: disable=module-docstring
+use_task("BUILD.aspect", "ci_check", "ci_release")
+
+# vim: set filetype=bzl:

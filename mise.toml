@@ -6,8 +6,11 @@ lockfile = true
 
 [tools]
 go = "1.27"
-bazel = "9.3.0"
-shellcheck = "0.11.0"
-"pipx:reuse" = "6.2.0"
-
 uv = "0.12.5"
+bazel = "9.3.0"
+"pipx:reuse" = { version = "6.2.0", extras = "charset-normalizer" }
+
+[tools."github:aspect-build/aspect-cli"]
+version = "v2026.40.5"
+bin = "aspect"
+matching_regex = "^aspect-cli-(x86_64|aarch64)-(apple-darwin|unknown-linux-musl)$"

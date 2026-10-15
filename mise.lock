@@ -39,6 +39,49 @@ checksum = "sha256:297d55398260396da2b7d7bc30ef29ff87a2d1e458b7ef372db56835db11c
 url = "https://github.com/bazelbuild/bazel/releases/download/9.3.0/bazel-9.3.0-windows-x86_64.zip"
 url_api = "https://api.github.com/repos/bazelbuild/bazel/releases/assets/619248298"
 
+[[tools."github:aspect-build/aspect-cli"]]
+version = "2026.40.5"
+backend = "github:aspect-build/aspect-cli"
+
+[tools."github:aspect-build/aspect-cli".options]
+matching_regex = "^aspect-cli-(x86_64|aarch64)-(apple-darwin|unknown-linux-musl)$"
+
+[tools."github:aspect-build/aspect-cli"."platforms.linux-arm64"]
+checksum = "sha256:8add723f36940fc2da3e49baf5b9fb64b5c581f7e5ef50fe380390a2fc9df6f1"
+url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.40.5/aspect-cli-aarch64-unknown-linux-musl"
+url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/602006334"
+provenance = "github-attestations"
+
+[tools."github:aspect-build/aspect-cli"."platforms.linux-arm64-musl"]
+checksum = "sha256:8add723f36940fc2da3e49baf5b9fb64b5c581f7e5ef50fe380390a2fc9df6f1"
+url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.40.5/aspect-cli-aarch64-unknown-linux-musl"
+url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/602006334"
+provenance = "github-attestations"
+
+[tools."github:aspect-build/aspect-cli"."platforms.linux-x64"]
+checksum = "sha256:d3ffff65f6bf0bec8742c8664d70a7da805d1607600b3acaea196858ab6d4d08"
+url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.40.5/aspect-cli-x86_64-unknown-linux-musl"
+url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/602006363"
+provenance = "github-attestations"
+
+[tools."github:aspect-build/aspect-cli"."platforms.linux-x64-musl"]
+checksum = "sha256:d3ffff65f6bf0bec8742c8664d70a7da805d1607600b3acaea196858ab6d4d08"
+url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.40.5/aspect-cli-x86_64-unknown-linux-musl"
+url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/602006363"
+provenance = "github-attestations"
+
+[tools."github:aspect-build/aspect-cli"."platforms.macos-arm64"]
+checksum = "sha256:ff0c037208609867a1f046f76a4b4ab6b337e0ce5e67f136e7afae17337b752a"
+url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.40.5/aspect-cli-aarch64-apple-darwin"
+url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/602006336"
+provenance = "github-attestations"
+
+[tools."github:aspect-build/aspect-cli"."platforms.macos-x64"]
+checksum = "sha256:28a33da99b7658ea002c2f3af884914d69382aa13cc327a573e60b5bd80f69e9"
+url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.40.5/aspect-cli-x86_64-apple-darwin"
+url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/602006356"
+provenance = "github-attestations"
+
 [[tools.go]]
 version = "1.27.2"
 backend = "core:go"
@@ -75,44 +118,8 @@ url = "https://dl.google.com/go/go1.27.2.windows-amd64.zip"
 version = "6.2.0"
 backend = "pipx:reuse"
 
-[[tools.shellcheck]]
-version = "0.11.0"
-backend = "aqua:koalaman/shellcheck"
-
-[tools.shellcheck."platforms.linux-arm64"]
-checksum = "sha256:12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.xz"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056934"
-
-[tools.shellcheck."platforms.linux-arm64-musl"]
-checksum = "sha256:12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.xz"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056934"
-
-[tools.shellcheck."platforms.linux-x64"]
-checksum = "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056942"
-
-[tools.shellcheck."platforms.linux-x64-musl"]
-checksum = "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056942"
-
-[tools.shellcheck."platforms.macos-arm64"]
-checksum = "sha256:56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056932"
-
-[tools.shellcheck."platforms.macos-x64"]
-checksum = "sha256:3c89db4edcab7cf1c27bff178882e0f6f27f7afdf54e859fa041fca10febe4c6"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.x86_64.tar.xz"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056930"
-
-[tools.shellcheck."platforms.windows-x64"]
-checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
+[tools."pipx:reuse".options]
+extras = "charset-normalizer"
 
 [[tools.uv]]
 version = "0.12.5"

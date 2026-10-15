@@ -3,16 +3,20 @@
 
 build --workspace_status_command="uv run --no-project --python 3.13 python tools/workspace_status.py"
 build --stamp
+build --compilation_mode=opt
+
+build --action_env=TMP
+build --action_env=TEMP
 build --action_env=PATH
-build --action_env=BAZEL_SH
-build --action_env=PROCESSOR_ARCHITECTURE
-build --action_env=PROCESSOR_ARCHITEW6432
 build --action_env=APPDATA
+build --action_env=BAZEL_SH
 build --action_env=LOCALAPPDATA
-build --action_env=PROGRAMFILES
-build --action_env=PROGRAMFILES(X86)
-build --action_env=PROGRAMDATA
 build --action_env=ALLUSERSPROFILE
 build --action_env=USERPROFILE
-build --action_env=TEMP
-build --action_env=TMP
+build --action_env=PROGRAMDATA
+build --action_env=PROGRAMFILES
+build --action_env=PROGRAMFILES(X86)
+build --action_env=PROCESSOR_ARCHITECTURE
+build --action_env=PROCESSOR_ARCHITEW6432
+
+build:lint --aspects=//tools:linters.bzl%buildifier

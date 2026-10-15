@@ -9,6 +9,7 @@ path = [
   ".gitignore",
   ".gitmodules",
   ".mailmap",
+  "MODULE.bazel.lock",
   "VERSION",
   "pkg/hrc.json",
   "go.mod",

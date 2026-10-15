@@ -2,16 +2,34 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@gazelle//:def.bzl", "gazelle")
 load("@rules_pkg//pkg:mappings.bzl", "REMOVE_BASE_DIRECTORY", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//tools:platforms.bzl", "OSES", "PLATFORMS")
+load("//tools:platforms.bzl", "ARCH", "OS")
 
-exports_files(["go.mod", "go.sum"])
+# gazelle:prefix gilti.dev/hrc
+# gazelle:exclude dist
+# gazelle:exclude runner
 
-alias(
-    name = "hrc",
-    actual = "//cmd:hrc",
-    visibility = ["//visibility:public"],
+gazelle(name = "gazelle")
+
+filegroup(
+    name = "starlark_sources",
+    srcs = [
+        "BUILD.aspect",
+        "BUILD.bazel",
+        "MODULE.aspect",
+        "MODULE.bazel",
+    ] + [
+        "//cmd:BUILD.bazel",
+        "//runner:starlark_sources",
+        "//tools:starlark_sources",
+        "//tools/format:BUILD.bazel",
+    ],
+    tags = [
+        "lint-with-buildifier",
+        "manual",
+    ],
 )
 
 alias(
@@ -21,12 +39,9 @@ alias(
 )
 
 alias(
-    name = "release",
-    actual = select({
-        "//:host_" + arch + "_" + os: "//:" + arch + "_" + os
-        for arch, os in PLATFORMS
-    }),
-    tags = ["manual"],
+    name = "hrc",
+    actual = "//cmd:hrc",
+    visibility = ["//visibility:public"],
 )
 
 pkg_files(
@@ -42,80 +57,84 @@ pkg_files(
     tags = ["manual"],
 )
 
-[genrule(
-    name = "target_" + arch + "_" + os,
-    outs = [arch + "_" + os + "/TARGET"],
-    cmd = "echo " + arch + "-" + os + " > $@",
+write_file(
+    name = "target",
+    out = "TARGET",
+    content = [
+        ARCH + "-" + OS,
+        "",
+    ],
     tags = ["manual"],
-) for arch, os in PLATFORMS]
+)
 
-[pkg_files(
-    name = "controller_" + arch + "_" + os,
-    srcs = ["//cmd:" + arch + "_" + os],
+pkg_files(
+    name = "controller",
+    srcs = ["//cmd:hrc"],
     attributes = pkg_attributes(mode = "0755"),
-    renames = {"//cmd:" + arch + "_" + os: "hrc.exe" if os == "windows" else "hrc"},
+    renames = {"//cmd:hrc": "hrc.exe" if OS == "windows" else "hrc"},
     tags = ["manual"],
-) for arch, os in PLATFORMS]
+)
 
-[pkg_files(
-    name = "runner_files_" + arch + "_" + os,
-    srcs = ["//runner:payload_" + arch + "_" + os],
+pkg_files(
+    name = "runner_files",
+    srcs = ["//runner"],
     attributes = pkg_attributes(mode = "0755"),
     prefix = "runner",
-    renames = {"//runner:payload_" + arch + "_" + os: REMOVE_BASE_DIRECTORY},
+    renames = {"//runner": REMOVE_BASE_DIRECTORY},
     tags = ["manual"],
-) for arch, os in PLATFORMS]
+)
 
-[pkg_files(
-    name = "target_file_" + arch + "_" + os,
-    srcs = [":target_" + arch + "_" + os],
-    renames = {":target_" + arch + "_" + os: "TARGET"},
+pkg_files(
+    name = "target_file",
+    srcs = [":target"],
+    renames = {":target": "TARGET"},
     tags = ["manual"],
-) for arch, os in PLATFORMS]
+)
 
-[pkg_files(
-    name = "control_" + os,
-    srcs = ["pkg/control.ps1" if os == "windows" else "pkg/control"],
-    attributes = pkg_attributes(mode = "0644" if os == "windows" else "0755"),
-    renames = {"pkg/control.ps1" if os == "windows" else "pkg/control": "control.ps1" if os == "windows" else "control"},
+pkg_files(
+    name = "control",
+    srcs = ["pkg/control.ps1" if OS == "windows" else "pkg/control"],
+    attributes = pkg_attributes(mode = "0644" if OS == "windows" else "0755"),
+    renames = {"pkg/control.ps1" if OS == "windows" else "pkg/control": "control.ps1" if OS == "windows" else "control"},
     tags = ["manual"],
-) for os in OSES]
+)
 
-[pkg_files(
-    name = "services_" + os,
+pkg_files(
+    name = "services",
     srcs = ["pkg/services/" + {
         "darwin": "org.hrc.plist",
         "linux": "hrc.systemd",
         "windows": "hrc.winsw.xml",
-    }[os]],
+    }[OS]],
     strip_prefix = strip_prefix.from_root(),
     tags = ["manual"],
-) for os in OSES]
+)
 
-[pkg_files(
-    name = "scripts_" + os,
-    srcs = ["pkg/scripts/" + hook + ".sh" for hook in [
+pkg_files(
+    name = "scripts",
+    srcs = [] if OS == "windows" else ["pkg/scripts/" + hook + ".sh" for hook in [
         "common",
         "preinstall",
         "postinstall",
         "preremove",
         "postremove",
-    ]] + (["pkg/services/hrc.alpine"] if os == "linux" else []),
+    ]] + (["pkg/services/hrc.alpine"] if OS == "linux" else []),
     attributes = pkg_attributes(mode = "0755"),
     strip_prefix = strip_prefix.from_root(),
     tags = ["manual"],
-) for os in OSES if os != "windows"]
+)
 
-[pkg_tar(
-    name = arch + "_" + os,
+pkg_tar(
+    name = "release",
     srcs = [
+        ":control",
+        ":controller",
         ":release_docs",
-        ":controller_" + arch + "_" + os,
-        ":runner_files_" + arch + "_" + os,
-        ":target_file_" + arch + "_" + os,
-        ":control_" + os,
-        ":services_" + os,
-    ] + ([":scripts_" + os] if os != "windows" else []),
+        ":runner_files",
+        ":scripts",
+        ":services",
+        ":target_file",
+    ],
     allow_duplicates_with_different_content = False,
     extension = "tar.gz",
     mode = "",
@@ -123,33 +142,13 @@ pkg_files(
     stamp = 0,
     tags = ["manual"],
     visibility = ["//visibility:public"],
-) for arch, os in PLATFORMS]
-
-write_file(
-    name = "release_platforms",
-    out = "release_platforms.json",
-    content = [json.encode(PLATFORMS)],
-    tags = ["manual"],
 )
 
 filegroup(
     name = "archives",
-    srcs = select({"//:host_" + arch + "_" + os: [
-        ":amd64_" + os,
-        ":arm64_" + os,
-    ] for arch, os in PLATFORMS}) + [":release_platforms"],
+    srcs = [
+        ":release",
+    ],
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
-
-[config_setting(
-    name = "host_" + arch + "_" + os,
-    constraint_values = [
-        "@platforms//cpu:" + {
-            "amd64": "x86_64",
-            "arm64": "aarch64",
-        }[arch],
-        "@platforms//os:" + ("osx" if os == "darwin" else os),
-    ],
-    visibility = ["//visibility:public"],
-) for arch, os in PLATFORMS]

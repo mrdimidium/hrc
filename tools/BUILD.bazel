@@ -1,4 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
 # SPDX-License-Identifier: BSD-3-Clause
 
-exports_files(["platforms.bzl"])
+load(":tools.bzl", "buildifier_tool")
+
+buildifier_tool(
+    name = "buildifier",
+    visibility = ["//visibility:public"],
+)
+
+BZLS = ["BUILD.bazel"] + glob(["*.bzl"])
+
+filegroup(
+    name = "starlark_sources",
+    srcs = BZLS,
+    visibility = ["//visibility:public"],
+)
+
+exports_files(glob(["*.py"]) + BZLS)

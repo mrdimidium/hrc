@@ -43,14 +43,42 @@ jobs:
         with:
           fetch-depth: 0
           submodules: true
+
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          install_args: bazel uv
+          install_args: ${{ matrix.os == 'windows' && 'bazel uv' || '' }}
+
+      - name: Check licenses and lint
+        if: matrix.os != 'windows'
+        run: aspect ci check
+
       - id: build
         shell: bash
         env:
           BAZEL_SH: ${{ matrix.os == 'windows' && 'C:/Program Files/Git/bin/bash.exe' || 'bash' }}
-        run: bash ci/build.sh
+          TARGET_OS: ${{ matrix.os }}
+        run: |
+          bazel build //:archives --jobs=2
+          target=$(tr -d '\r\n' < bazel-bin/TARGET)
+          [[ "$target" == *-"$TARGET_OS" ]]
+          version=$(awk '$1 == "STABLE_HRC_VERSION" { print $2 }' bazel-out/stable-status.txt)
+          : "${version:?Missing STABLE_HRC_VERSION}"
+          archive="hrc-$target-$version.tar.gz"
+          mkdir -p dist/release
+          cp bazel-bin/release.tar.gz "dist/release/$archive"
+          cd dist/release
+          if command -v sha256sum >/dev/null; then
+            digest=$(sha256sum --binary "$archive")
+          else
+            digest=$(shasum -a 256 --binary "$archive")
+          fi
+          printf '%s  %s\n' "${digest%% *}" "$archive" > "SHASUMS256-$TARGET_OS.txt"
+          printf '%s\n' "$version" > VERSION
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        run: bazel test //cmd:cmd_test --nostamp --workspace_status_command= --test_output=errors
+
       - name: Attest build archives
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/release-'))
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -65,34 +93,8 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-  test:
-    name: Test (${{ matrix.os }}, ${{ matrix.arch }})
-    needs: build
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows
-            arch: amd64
-            runner: windows-latest
-          - os: darwin
-            arch: arm64
-            runner: macos-15
-          - os: linux
-            arch: amd64
-            runner: ubuntu-latest
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
-        with:
-          install_args: bazel
-      - name: Run tests
-        run: bazel test //cmd:cmd_test --nostamp --workspace_status_command= --test_output=errors
-
   release:
-    needs: [build, test]
+    needs: [build]
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/release-'))
     runs-on: ubuntu-latest
     permissions:
@@ -106,10 +108,24 @@ jobs:
           path: dist/release
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          install_args: uv
+          install_args: github:aspect-build/aspect-cli
       - name: Verify and merge build artifacts
-        run: uv run --no-project --python 3.13 python tools/release.py merge
-      - run: bash ci/release.sh
+        shell: bash
+        env:
+          HRC_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          cd dist/release
+          : > SHASUMS256.txt
+          for os in linux darwin windows; do
+            manifest="SHASUMS256-$os.txt"
+            [[ $(wc -l < "$manifest") -eq 1 ]]
+            read -r digest archive < "$manifest"
+            [[ "$archive" == hrc-*-"$os"-"$HRC_VERSION".tar.gz ]]
+            sha256sum --check "$manifest"
+            cat "$manifest" >> SHASUMS256.txt
+          done
+          sort -o SHASUMS256.txt SHASUMS256.txt
+      - run: aspect ci release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

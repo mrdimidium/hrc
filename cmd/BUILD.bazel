@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("//tools:platforms.bzl", "PLATFORMS")
 
 exports_files(["BUILD.bazel"])
 
@@ -17,28 +16,16 @@ go_library(
     deps = ["@com_github_actions_scaleset//:scaleset"],
 )
 
-[go_binary(
-    name = arch + "_" + os,
+go_binary(
+    name = "hrc",
     embed = [":cmd_lib"],
     gc_linkopts = [
         "-s",
         "-w",
     ],
-    goarch = arch,
-    goos = os,
     pure = "on",
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     x_defs = {"gilti.dev/hrc/cmd.Version": "{STABLE_HRC_VERSION}"},
-) for arch, os in PLATFORMS]
-
-alias(
-    name = "hrc",
-    actual = select({
-        "//:host_" + arch + "_" + os: ":" + arch + "_" + os
-        for arch, os in PLATFORMS
-    }),
-    visibility = ["//visibility:public"],
 )
 
 go_test(
