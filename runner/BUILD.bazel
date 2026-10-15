@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+load("//tools:platforms.bzl", "PLATFORMS")
+load(":runner.bzl", "runner_layout")
+
+exports_files([
+    "build.py",
+    "runner.BUILD.bazel",
+])
+
+filegroup(
+    name = "starlark_sources",
+    srcs = [
+        "BUILD.bazel",
+        "runner.BUILD.bazel",
+        "runner.bzl",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "runner",
+    actual = select({"//:host_" + arch + "_" + os: ":payload_" + arch + "_" + os for arch, os in PLATFORMS}),
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+[runner_layout(
+    name = "payload_" + arch + "_" + os,
+    srcs = ["@actions_runner//:sources"],
+    dev = "@actions_runner//:src/dev.sh",
+    rid = {
+        "darwin": "osx",
+        "linux": "linux",
+        "windows": "win",
+    }[os] + "-" + ("x64" if arch == "amd64" else "arm64"),
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:" + ("osx" if os == "darwin" else os)],
+    visibility = ["//visibility:public"],
+) for arch, os in PLATFORMS]

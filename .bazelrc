@@ -1,5 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
 # SPDX-License-Identifier: BSD-3-Clause
 
-build --workspace_status_command="python3 tools/workspace_status.py"
+build --workspace_status_command="uv run --no-project --python 3.13 python tools/workspace_status.py"
 build --stamp
+build --action_env=PATH
+build --action_env=BAZEL_SH

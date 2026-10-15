@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+filegroup(
+    name = "sources",
+    srcs = ["LICENSE"] + glob(
+        ["src/**"],
+        exclude = [
+            "src/**/bin/**",
+            "src/**/obj/**",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+exports_files(["src/dev.sh"])

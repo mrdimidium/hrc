@@ -11,6 +11,12 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+alias(
+    name = "runner",
+    actual = "//runner",
+    tags = ["manual"],
+)
+
 [config_setting(
     name = "host_" + arch + "_" + os,
     constraint_values = [
