@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
 # SPDX-License-Identifier: BSD-3-Clause
 
-load("//tools:platforms.bzl", "RID")
+load("//tools:platforms.bzl", "ARCH", "OS")
 load(":runner.bzl", "runner_layout")
 
 exports_files([
@@ -23,7 +23,8 @@ runner_layout(
     name = "runner",
     srcs = ["@actions_runner//:sources"],
     dev = "@actions_runner//:src/dev.sh",
-    rid = RID,
+    os = OS,
+    arch = ARCH,
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )

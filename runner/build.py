@@ -12,6 +12,15 @@ import tempfile
 
 
 def build(dev, output, rid):
+    target_os = rid.rsplit("-", 1)[0]
+    host_os = {"linux": "linux", "darwin": "osx", "win32": "win"}.get(sys.platform)
+    if target_os not in {"linux", "osx", "win"} or rid.rsplit("-", 1)[-1] not in {"x64", "arm64"}:
+        raise ValueError(f"Unsupported runner runtime: {rid}")
+    if target_os != host_os:
+        raise ValueError(
+            f"Runner {rid} requires a {target_os} build host; current host is {sys.platform}. "
+            "Upstream dev.sh and OS-specific compilation constants require the target OS."
+        )
     source = Path(dev).resolve().parent
     output = Path(output).resolve()
     # Upstream dev.sh expects /c/... paths on Windows, not Git Bash's /tmp mount.

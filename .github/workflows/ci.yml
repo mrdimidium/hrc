@@ -19,11 +19,13 @@ concurrency:
 
 jobs:
   build:
-    name: Build (${{ matrix.os }})
+    name: Build (${{ matrix.os }}/${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        os: [linux, darwin, windows]
+        arch: [amd64, arm64]
         include:
           - os: linux
             runner: ubuntu-latest
@@ -57,11 +59,13 @@ jobs:
         env:
           BAZEL_SH: ${{ matrix.os == 'windows' && 'C:/Program Files/Git/bin/bash.exe' || 'bash' }}
           TARGET_OS: ${{ matrix.os }}
-          MSYS2_ARG_CONV_EXCL: "//"
+          TARGET_ARCH: ${{ matrix.arch }}
+          # Git Bash matches prefixes of whole arguments, including option names.
+          MSYS2_ARG_CONV_EXCL: "//;--platforms="
         run: |
-          bazel build //cmd:release --jobs=2
+          bazel build //cmd:release --platforms="//tools:${TARGET_OS}_${TARGET_ARCH}" --jobs=2
           target=$(tar -xOf bazel-bin/cmd/release.tar.gz ./TARGET | tr -d '\r\n')
-          [[ "$target" == *-"$TARGET_OS" ]]
+          [[ "$target" == "$TARGET_ARCH-$TARGET_OS" ]]
           version=$(awk '$1 == "STABLE_HRC_VERSION" { print $2 }' bazel-out/stable-status.txt)
           : "${version:?Missing STABLE_HRC_VERSION}"
           archive="hrc-$target-$version.tar.gz"
@@ -73,22 +77,24 @@ jobs:
           else
             digest=$(shasum -a 256 --binary "$archive")
           fi
-          printf '%s  %s\n' "${digest%% *}" "$archive" > "SHASUMS256-$TARGET_OS.txt"
+          printf '%s  %s\n' "${digest%% *}" "$archive" > "SHASUMS256-$TARGET_ARCH-$TARGET_OS.txt"
           printf '%s\n' "$version" > VERSION
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
 
       - name: Run tests
-        run: bazel test //cmd:cmd_test --nostamp --workspace_status_command= --test_output=errors
+        run: |
+          uv run --no-project --python 3.13 python -m unittest discover -s runner -p '*_test.py'
+          bazel test //cmd:cmd_test --nostamp --workspace_status_command= --test_output=errors
 
       - name: Attest build archives
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/release-'))
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-checksums: dist/release/SHASUMS256-${{ matrix.os }}.txt
+          subject-checksums: dist/release/SHASUMS256-${{ matrix.arch }}-${{ matrix.os }}.txt
           create-storage-record: false
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: build-${{ matrix.os }}
+          name: build-${{ matrix.arch }}-${{ matrix.os }}
           path: dist/release/
           if-no-files-found: error
           compression-level: 0
@@ -117,11 +123,11 @@ jobs:
         run: |
           cd dist/release
           : > SHASUMS256.txt
-          for os in linux darwin windows; do
-            manifest="SHASUMS256-$os.txt"
+          for target in amd64-linux arm64-linux amd64-darwin arm64-darwin amd64-windows arm64-windows; do
+            manifest="SHASUMS256-$target.txt"
             [[ $(wc -l < "$manifest") -eq 1 ]]
             read -r digest archive < "$manifest"
-            [[ "$archive" == hrc-*-"$os"-"$HRC_VERSION".tar.gz ]]
+            [[ "$archive" == "hrc-$target-$HRC_VERSION.tar.gz" ]]
             sha256sum --check "$manifest"
             cat "$manifest" >> SHASUMS256.txt
           done

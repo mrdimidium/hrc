@@ -47,9 +47,15 @@ service(
     arch = ARCH,
 
     bin = ":hrc",
-    args = ["-config", "{config}"],
+    args = [
+        "-config",
+        "{config}",
+    ],
     config = "pkg/hrc.json",
-    installer = "pkg/control.ps1" if OS == "windows" else "pkg/control",
+    installer = select({
+        "@platforms//os:windows": "pkg/control.ps1",
+        "//conditions:default": "pkg/control",
+    }),
 
     tags = ["manual"],
     visibility = ["//visibility:public"],
