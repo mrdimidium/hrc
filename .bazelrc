@@ -1,0 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+build --workspace_status_command="python3 tools/workspace_status.py"
+build --stamp

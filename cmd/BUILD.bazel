@@ -29,6 +29,7 @@ go_library(
     pure = "on",
     tags = ["manual"],
     visibility = ["//visibility:public"],
+    x_defs = {"gilti.dev/hrc/cmd.Version": "{STABLE_HRC_VERSION}"},
 ) for arch, os in PLATFORMS]
 
 alias(
