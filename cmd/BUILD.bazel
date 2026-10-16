@@ -15,7 +15,11 @@ go_library(
     ),
     importpath = "gilti.dev/hrc/cmd",
     visibility = ["//:__pkg__"],  # keep
-    deps = ["@com_github_actions_scaleset//:scaleset"],
+    deps = [
+        "//pkg/listener",
+        "//pkg/worker",
+        "@com_github_actions_scaleset//:scaleset",
+    ],
 )
 
 go_binary(
@@ -35,6 +39,11 @@ go_test(
     size = "small",
     srcs = glob(["*_test.go"]),  # keep
     embed = [":cmd_lib"],
+    deps = [
+        "//pkg/listener",
+        "//pkg/worker",
+        "@com_github_actions_scaleset//:scaleset",
+    ],
 )
 
 service(

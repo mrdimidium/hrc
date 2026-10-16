@@ -21,6 +21,15 @@ filegroup(
 
 gazelle(name = "gazelle")
 
+test_suite(
+    name = "tests",
+    tests = [
+        "//cmd:cmd_test",
+        "//pkg/listener:listener_test",
+        "//pkg/worker:worker_test",
+    ],
+)
+
 filegroup(
     name = "starlark_sources",
     srcs = [
@@ -30,6 +39,8 @@ filegroup(
         "MODULE.bazel",
     ] + [
         "//cmd:BUILD.bazel",
+        "//pkg/listener:BUILD.bazel",
+        "//pkg/worker:BUILD.bazel",
         "//runner:starlark_sources",
         "//tools:starlark_sources",
         "//tools/format:BUILD.bazel",

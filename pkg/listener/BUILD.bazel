@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+exports_files(["BUILD.bazel"])
+
+go_library(
+    name = "listener",
+    srcs = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ),
+    importpath = "gilti.dev/hrc/pkg/listener",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@org_golang_x_oauth2//:oauth2",
+        "@org_golang_x_oauth2//clientcredentials",
+    ],
+)
+
+go_test(
+    name = "listener_test",
+    size = "small",
+    srcs = glob(["*_test.go"]),
+    embed = [":listener"],
+)
