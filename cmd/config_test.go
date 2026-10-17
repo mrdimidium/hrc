@@ -137,3 +137,43 @@ func TestLoadConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadConfigQuota(t *testing.T) {
+	const group = `"groups":[{"url":"https://github.com/org","name":"runners","pat":{"type":"inline","value":"token"}}]`
+	for _, tt := range []struct {
+		name, resources, want string
+		quota, reserve        Resources
+	}{
+		{name: "absent"},
+		{name: "binary units", resources: `"quota":{"cpu":2,"memory":"8GiB"},"reserve":{"cpu":0.5,"memory":"512MiB"},`,
+			quota: Resources{CPU: 2, Memory: 8 << 30}, reserve: Resources{CPU: 0.5, Memory: 512 << 20}},
+		{name: "bytes and units", resources: `"quota":{"memory":"1048576"},"reserve":{"memory":"1TiB"},`,
+			quota: Resources{Memory: 1 << 20}, reserve: Resources{Memory: 1 << 40}},
+		{name: "decimal unit", resources: `"quota":{"memory":"8GB"},`, want: "invalid memory size"},
+		{name: "fraction", resources: `"quota":{"memory":"1.5GiB"},`, want: "invalid memory size"},
+		{name: "number", resources: `"quota":{"memory":1024},`, want: "failed to parse json"},
+		{name: "overflow", resources: `"quota":{"memory":"17179869184GiB"},`, want: "invalid memory size"},
+		{name: "negative cpu", resources: `"quota":{"cpu":-1},`, want: "invalid quota: cpu"},
+		{name: "negative reserve", resources: `"reserve":{"cpu":-1},`, want: "invalid reserve: cpu"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(`{"id":"host",`+tt.resources+group+`}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadConfig(path)
+			checkError(t, err, tt.want)
+			if tt.want == "" && (cfg.Quota != tt.quota || cfg.Reserve != tt.reserve) {
+				t.Fatalf("quota %+v reserve %+v, want %+v and %+v", cfg.Quota, cfg.Reserve, tt.quota, tt.reserve)
+			}
+		})
+	}
+}
+
+func TestByteSizeString(t *testing.T) {
+	for size, want := range map[ByteSize]string{0: "0", 1000: "1000", 1 << 10: "1KiB", 3 << 29: "1536MiB", 8 << 30: "8GiB", 2 << 40: "2TiB"} {
+		if got := size.String(); got != want {
+			t.Errorf("ByteSize(%d) = %q, want %q", uint64(size), got, want)
+		}
+	}
+}

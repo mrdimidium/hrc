@@ -6,8 +6,10 @@ package main
 import (
 	"encoding/json/v2"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/actions/scaleset"
@@ -90,9 +92,62 @@ func (c *Group) Validate() error {
 	return nil
 }
 
+// ByteSize is a memory amount written as a JSON string: plain bytes or an
+// integer with a KiB, MiB, GiB or TiB suffix, for example "8GiB".
+type ByteSize uint64
+
+var byteUnits = []struct {
+	suffix string
+	size   ByteSize
+}{{"TiB", 1 << 40}, {"GiB", 1 << 30}, {"MiB", 1 << 20}, {"KiB", 1 << 10}}
+
+func (b *ByteSize) UnmarshalText(text []byte) error {
+	value, unit := string(text), ByteSize(1)
+	for _, u := range byteUnits {
+		if number, ok := strings.CutSuffix(value, u.suffix); ok {
+			value, unit = number, u.size
+			break
+		}
+	}
+	n, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || n > math.MaxUint64/uint64(unit) {
+		return fmt.Errorf("invalid memory size %q: expected bytes or an integer with KiB, MiB, GiB or TiB", text)
+	}
+	*b = ByteSize(n) * unit
+	return nil
+}
+
+func (b ByteSize) String() string {
+	for _, u := range byteUnits {
+		if b >= u.size && b%u.size == 0 {
+			return strconv.FormatUint(uint64(b/u.size), 10) + u.suffix
+		}
+	}
+	return strconv.FormatUint(uint64(b), 10)
+}
+
+// Resources is an amount of host CPU threads and memory. Zero leaves a
+// resource unaccounted.
+type Resources struct {
+	CPU    float64  `json:"cpu"`
+	Memory ByteSize `json:"memory"`
+}
+
+func (r *Resources) Validate() error {
+	if r.CPU < 0 || math.IsInf(r.CPU, 0) || math.IsNaN(r.CPU) {
+		return fmt.Errorf("cpu must be a non-negative number")
+	}
+	return nil
+}
+
 type Config struct {
 	Id     string  `json:"id"`
 	Groups []Group `json:"groups"`
+
+	// Every runner holds Quota from the host, which keeps Reserve for itself.
+	// Without a quota, the number of runners is unlimited.
+	Quota   Resources `json:"quota"`
+	Reserve Resources `json:"reserve"`
 
 	DirBin    string `json:"dirBin"`
 	DirBuilds string `json:"dirBuilds"`
@@ -113,6 +168,12 @@ func (c *Config) Validate() error {
 
 	if c.Id == "" {
 		return fmt.Errorf("id is required")
+	}
+	if err := c.Quota.Validate(); err != nil {
+		return fmt.Errorf("invalid quota: %w", err)
+	}
+	if err := c.Reserve.Validate(); err != nil {
+		return fmt.Errorf("invalid reserve: %w", err)
 	}
 
 	names := make(map[string]int, len(c.Groups))

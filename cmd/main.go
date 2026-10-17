@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"os/signal"
 	"sync"
@@ -49,6 +50,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	total := math.MaxInt32
+	if cfg.Quota != (Resources{}) {
+		host, err := hostResources()
+		if err != nil {
+			slog.Error("Couldn't detect host resources", "err", err)
+			os.Exit(1)
+		}
+		if total, err = slotCount(host, cfg.Reserve, cfg.Quota); err != nil {
+			slog.Error("Invalid quota", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("Host capacity", "cpu", host.CPU, "memory", host.Memory, "runners", total)
+	}
+	host := newSlots(total)
+
 	// Service managers stop with SIGTERM; Windows delivers console close and
 	// shutdown events as SIGTERM as well.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -62,7 +78,7 @@ func main() {
 	var wg sync.WaitGroup
 	for _, group := range cfg.Groups {
 		wg.Go(func() {
-			if err := run(ctx, cfg, &group); err != nil {
+			if err := run(ctx, cfg, &group, host); err != nil {
 				slog.Error("Group controller failed", "group", group.Name, "err", err)
 				failed.Store(true)
 				cancel()

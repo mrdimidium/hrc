@@ -584,6 +584,7 @@ func TestRunRetriesSessionWithoutInterruptingRunners(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var sessions, sessionDeletes, polls, jits atomic.Int32
+	var capacities sync.Map // Advertised X-ScaleSetMaxCapacity values.
 	var api *httptest.Server
 	api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -615,6 +616,7 @@ func TestRunRetriesSessionWithoutInterruptingRunners(t *testing.T) {
 			sessionDeletes.Add(1)
 			w.WriteHeader(http.StatusNoContent)
 		case r.URL.Path == "/queue":
+			capacities.Store(r.Header.Get(scaleset.HeaderScaleSetMaxCapacity), true)
 			if polls.Add(1) == 1 {
 				// Fail the session while the first runner executes its job.
 				w.WriteHeader(http.StatusBadRequest)
@@ -632,15 +634,17 @@ func TestRunRetriesSessionWithoutInterruptingRunners(t *testing.T) {
 	}))
 	defer api.Close()
 
+	// The poll blocked during the job must be restarted when its slot is
+	// released; otherwise the third poll arrives only after ctx expires.
 	go func() {
-		for ctx.Err() == nil && completed.Load() == 0 {
+		for ctx.Err() == nil && (completed.Load() == 0 || polls.Load() < 3) {
 			time.Sleep(10 * time.Millisecond)
 		}
 		cancel()
 	}()
 	cfg := &Config{Id: "host", DirBuilds: t.TempDir(), DirRunner: runner.dir}
 	group := &Group{Url: api.URL + "/org", Name: "smoke", Group: scaleset.DefaultRunnerGroup, Token: Secret{Src: "inline", Value: "pat"}}
-	if err := run(ctx, cfg, group); err != nil {
+	if err := run(ctx, cfg, group, newSlots(1)); err != nil {
 		t.Fatalf("session failures must be retried: %v", err)
 	}
 	if completed.Load() != 1 {
@@ -649,6 +653,15 @@ func TestRunRetriesSessionWithoutInterruptingRunners(t *testing.T) {
 	if jits.Load() != 1 {
 		t.Errorf("runner started %d times for one assigned job", jits.Load())
 	}
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		t.Error("slot release did not restart the long poll")
+	}
+	capacities.Range(func(value, _ any) bool {
+		if value != "1" {
+			t.Errorf("advertised capacity %q beyond the host's single slot", value)
+		}
+		return true
+	})
 	if sessions.Load() != 3 || sessionDeletes.Load() < 2 {
 		t.Errorf("sessions created=%d deleted=%d; want 3 created, failed session deleted", sessions.Load(), sessionDeletes.Load())
 	}

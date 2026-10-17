@@ -29,7 +29,7 @@ var sessionRetryMin, sessionRetryMax = 5 * time.Second, 2 * time.Minute
 // run returns an error only for local failures that a retry cannot fix. GitHub
 // API and session failures are retried until ctx is canceled, without
 // interrupting runners already started by the group.
-func run(ctx context.Context, cfg *Config, group *Group) error {
+func run(ctx context.Context, cfg *Config, group *Group, host *slots) error {
 	logger := slog.Default().With("group", group.Name)
 	logger.Info("Starting group controller")
 
@@ -58,7 +58,7 @@ func run(ctx context.Context, cfg *Config, group *Group) error {
 	delay := sessionRetryMin
 	for {
 		started := time.Now()
-		err := serve(ctx, cfg, group, runnerDir, &runners, &running)
+		err := serve(ctx, cfg, group, host, runnerDir, &runners, &running)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -79,7 +79,7 @@ func run(ctx context.Context, cfg *Config, group *Group) error {
 
 // serve connects the group's scale set and starts runners for assigned jobs
 // until the session fails or ctx is canceled.
-func serve(ctx context.Context, cfg *Config, group *Group, runnerDir string, runners *sync.WaitGroup, running *atomic.Int32) error {
+func serve(ctx context.Context, cfg *Config, group *Group, host *slots, runnerDir string, runners *sync.WaitGroup, running *atomic.Int32) error {
 	logger := slog.Default().With("group", group.Name)
 	info := scaleset.SystemInfo{System: "hrc", Version: Version}
 
@@ -133,27 +133,57 @@ func serve(ctx context.Context, cfg *Config, group *Group, runnerDir string, run
 
 	statistics := session.Session().Statistics
 	lastMessageID := 0
+	interrupted := false
 	for ctx.Err() == nil {
-		if statistics != nil {
+		// Statistics are stale after an interrupted poll: a runner that just
+		// finished may still count as assigned, and would be replaced needlessly.
+		if statistics != nil && !interrupted {
 			missing := statistics.TotalAssignedJobs - int(running.Load())
 			for range missing {
 				if ctx.Err() != nil {
 					break
 				}
 				running.Add(1)
+				host.queue()
 				runners.Go(func() {
-					defer running.Add(-1)
-					if err := runRunner(ctx, client, scaleSet.ID, cfg, runnerDir); err != nil {
+					if err := host.acquire(ctx); err != nil {
+						running.Add(-1)
+						return
+					}
+					err := runRunner(ctx, client, scaleSet.ID, cfg, runnerDir)
+					// Leave the group's count before the slot is advertised again.
+					running.Add(-1)
+					host.release()
+					if err != nil {
 						logger.Error("Runner failed", "err", err)
 					}
 				})
 			}
 		}
 
-		message, err := session.GetMessage(ctx, lastMessageID, math.MaxInt32)
+		// GitHub assigns the scale set at most the advertised capacity: the
+		// group's own runners plus the host's free slots. A release restarts
+		// the long poll, so GitHub learns about the freed slot immediately.
+		// An unacknowledged message is delivered again by the next poll.
+		free, released := host.state()
+		capacity := min(int(running.Load())+free, math.MaxInt32)
+		poll, cancelPoll := context.WithCancel(ctx)
+		go func() {
+			select {
+			case <-released:
+				cancelPoll()
+			case <-poll.Done():
+			}
+		}()
+		message, err := session.GetMessage(poll, lastMessageID, capacity)
+		interrupted = err != nil && poll.Err() != nil
+		cancelPoll()
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
+			}
+			if interrupted {
+				continue
 			}
 			return fmt.Errorf("get scaleset message: %w", err)
 		}
