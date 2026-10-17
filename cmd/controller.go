@@ -22,12 +22,16 @@ import (
 	"github.com/actions/scaleset"
 )
 
+// Session retry delays grow from the minimum to the maximum and reset after a
+// session has served for longer than the maximum.
+var sessionRetryMin, sessionRetryMax = 5 * time.Second, 2 * time.Minute
+
+// run returns an error only for local failures that a retry cannot fix. GitHub
+// API and session failures are retried until ctx is canceled, without
+// interrupting runners already started by the group.
 func run(ctx context.Context, cfg *Config, group *Group) error {
 	logger := slog.Default().With("group", group.Name)
 	logger.Info("Starting group controller")
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 
 	runnerDir := cfg.DirRunner
 	if runnerDir == "" {
@@ -45,6 +49,38 @@ func run(ctx context.Context, cfg *Config, group *Group) error {
 		return fmt.Errorf("create builds directory: %w", err)
 	}
 
+	// Runners outlive the session that started them: they hold their own
+	// Broker connections and must not be canceled by a session failure.
+	var runners sync.WaitGroup
+	var running atomic.Int32
+	defer runners.Wait()
+
+	delay := sessionRetryMin
+	for {
+		started := time.Now()
+		err := serve(ctx, cfg, group, runnerDir, &runners, &running)
+		if ctx.Err() != nil {
+			return nil
+		}
+		if time.Since(started) > sessionRetryMax {
+			delay = sessionRetryMin
+		}
+		logger.Error("Group session failed, retrying", "err", err, "delay", delay)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil
+		case <-timer.C:
+		}
+		delay = min(2*delay, sessionRetryMax)
+	}
+}
+
+// serve connects the group's scale set and starts runners for assigned jobs
+// until the session fails or ctx is canceled.
+func serve(ctx context.Context, cfg *Config, group *Group, runnerDir string, runners *sync.WaitGroup, running *atomic.Int32) error {
+	logger := slog.Default().With("group", group.Name)
 	info := scaleset.SystemInfo{System: "hrc", Version: Version}
 
 	var err error
@@ -95,13 +131,6 @@ func run(ctx context.Context, cfg *Config, group *Group) error {
 		}
 	}()
 
-	var wg sync.WaitGroup
-	var running atomic.Int32
-	defer func() {
-		cancel()
-		wg.Wait()
-	}()
-
 	statistics := session.Session().Statistics
 	lastMessageID := 0
 	for ctx.Err() == nil {
@@ -112,7 +141,7 @@ func run(ctx context.Context, cfg *Config, group *Group) error {
 					break
 				}
 				running.Add(1)
-				wg.Go(func() {
+				runners.Go(func() {
 					defer running.Add(-1)
 					if err := runRunner(ctx, client, scaleSet.ID, cfg, runnerDir); err != nil {
 						logger.Error("Runner failed", "err", err)

@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -73,6 +74,14 @@ func TestMain(m *testing.M) {
 			os.Exit(36)
 		}
 		mode := os.Getenv("WORKER_TEST_MODE")
+		// Report delivery, so tests can act on a running job without sleeping.
+		started, _ := http.NewRequest("POST", job.Endpoint+"/started", nil)
+		started.Header.Set("Authorization", "Bearer job-token")
+		if response, err := http.DefaultClient.Do(started); err != nil {
+			os.Exit(40)
+		} else {
+			response.Body.Close()
+		}
 		if mode == "crash" {
 			os.Exit(1)
 		}
@@ -120,6 +129,8 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 		t.Fatal(err)
 	}
 	var polls, renews, completes, deletes, tokens, sessions, acquires atomic.Int32
+	started := make(chan struct{})
+	var startedOnce sync.Once
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -232,6 +243,9 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]any{"lockedUntil": time.Now().Add(500 * time.Millisecond)})
+		case "/job/started":
+			startedOnce.Do(func() { close(started) })
+			w.WriteHeader(204)
 		case "/job/completejob":
 			completes.Add(1)
 			var body map[string]any
@@ -301,7 +315,7 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 	t.Cleanup(func() { _ = network.Close(context.Background()) })
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
-	runner := &testRunner{network: network, local: local, dir: dir, jit: encoded, ctx: ctx}
+	runner := &testRunner{network: network, local: local, dir: dir, jit: encoded, ctx: ctx, started: started}
 	return runner, &completes, &deletes, &renews, cancel
 }
 
@@ -311,6 +325,7 @@ type testRunner struct {
 	dir     string
 	jit     string
 	ctx     context.Context
+	started <-chan struct{} // Closed once Worker has received its job.
 }
 
 func TestControllerJobLifecycle(t *testing.T) {
@@ -319,7 +334,13 @@ func TestControllerJobLifecycle(t *testing.T) {
 			w, completed, deleted, renewed, cancel := controllerFixture(t, mode)
 			ctx := w.ctx
 			if mode == "shutdown" {
-				time.AfterFunc(200*time.Millisecond, cancel)
+				go func() {
+					select {
+					case <-w.started:
+						cancel()
+					case <-ctx.Done():
+					}
+				}()
 			}
 			result, err := runJob(ctx, w.network, w.local, 150*time.Millisecond)
 			switch mode {
@@ -547,6 +568,89 @@ func TestEnsureRunnerScaleSet(t *testing.T) {
 				t.Errorf("GET=%d POST=%d; want GET=%d POST=%d", gets.Load(), creates.Load(), test.wantGets, test.wantCreates)
 			}
 		})
+	}
+}
+
+func TestRunRetriesSessionWithoutInterruptingRunners(t *testing.T) {
+	previousMin, previousMax := sessionRetryMin, sessionRetryMax
+	sessionRetryMin, sessionRetryMax = 10*time.Millisecond, 50*time.Millisecond
+	t.Cleanup(func() { sessionRetryMin, sessionRetryMax = previousMin, previousMax })
+
+	runner, completed, _, _, _ := controllerFixture(t, "success")
+	env := "WORKER_ENV=override\nDOTENV_VALUE=present\nWORKER_TEST_MODE=success\n"
+	if err := os.WriteFile(filepath.Join(runner.dir, ".env"), []byte(env), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var sessions, sessionDeletes, polls, jits atomic.Int32
+	var api *httptest.Server
+	api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/v3/orgs/org/actions/runners/registration-token":
+			w.WriteHeader(http.StatusCreated)
+			io.WriteString(w, `{"token":"registration"}`)
+		case r.URL.Path == "/api/v3/actions/runner-registration":
+			claims, _ := json.Marshal(map[string]int64{"exp": time.Now().Add(time.Hour).Unix()})
+			token := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256"}`)) + "." + base64.RawURLEncoding.EncodeToString(claims) + ".c2ln"
+			json.NewEncoder(w).Encode(map[string]string{"url": api.URL + "/", "token": token})
+		case r.URL.Path == "/_apis/runtime/runnerscalesets":
+			io.WriteString(w, `{"count":1,"value":[{"id":42,"name":"smoke","runnerGroupId":1}]}`)
+		case r.URL.Path == "/_apis/runtime/runnerscalesets/42/sessions" && r.Method == http.MethodPost:
+			n := sessions.Add(1)
+			if n == 1 {
+				// A previous controller instance still owns the session.
+				w.WriteHeader(http.StatusConflict)
+				io.WriteString(w, `{"typeName":"GitHub.DistributedTask.WebApi.TaskAgentSessionConflictException","message":"conflict"}`)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"sessionId":               fmt.Sprintf("00000000-0000-0000-0000-00000000000%d", n),
+				"messageQueueUrl":         api.URL + "/queue",
+				"messageQueueAccessToken": "queue-token",
+				"statistics":              map[string]int{"totalAssignedJobs": 1},
+			})
+		case strings.HasPrefix(r.URL.Path, "/_apis/runtime/runnerscalesets/42/sessions/") && r.Method == http.MethodDelete:
+			sessionDeletes.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/queue":
+			if polls.Add(1) == 1 {
+				// Fail the session while the first runner executes its job.
+				w.WriteHeader(http.StatusBadRequest)
+				io.WriteString(w, `{"typeName":"QueueFailure"}`)
+				return
+			}
+			<-r.Context().Done()
+		case r.URL.Path == "/_apis/runtime/runnerscalesets/42/generatejitconfig":
+			jits.Add(1)
+			json.NewEncoder(w).Encode(map[string]string{"encodedJITConfig": runner.jit})
+		default:
+			t.Errorf("unexpected endpoint: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer api.Close()
+
+	go func() {
+		for ctx.Err() == nil && completed.Load() == 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
+		cancel()
+	}()
+	cfg := &Config{Id: "host", DirBuilds: t.TempDir(), DirRunner: runner.dir}
+	group := &Group{Url: api.URL + "/org", Name: "smoke", Group: scaleset.DefaultRunnerGroup, Token: Secret{Src: "inline", Value: "pat"}}
+	if err := run(ctx, cfg, group); err != nil {
+		t.Fatalf("session failures must be retried: %v", err)
+	}
+	if completed.Load() != 1 {
+		t.Errorf("job interrupted by session failure: complete=%d", completed.Load())
+	}
+	if jits.Load() != 1 {
+		t.Errorf("runner started %d times for one assigned job", jits.Load())
+	}
+	if sessions.Load() != 3 || sessionDeletes.Load() < 2 {
+		t.Errorf("sessions created=%d deleted=%d; want 3 created, failed session deleted", sessions.Load(), sessionDeletes.Load())
 	}
 }
 

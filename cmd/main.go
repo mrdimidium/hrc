@@ -11,6 +11,8 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
+	"syscall"
 )
 
 // Version holds the build version injected by the linker
@@ -47,16 +49,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	// Service managers stop with SIGTERM; Windows delivers console close and
+	// shutdown events as SIGTERM as well.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// A group fails only on local errors that a retry cannot fix. Stop the other
+	// groups and exit non-zero, so the service manager restarts the controller.
+	var failed atomic.Bool
 	var wg sync.WaitGroup
 	for _, group := range cfg.Groups {
 		wg.Go(func() {
 			if err := run(ctx, cfg, &group); err != nil {
-				slog.Error("Group controller failed", "err", err)
+				slog.Error("Group controller failed", "group", group.Name, "err", err)
+				failed.Store(true)
+				cancel()
 			}
 		})
 	}
 	wg.Wait()
+	if failed.Load() {
+		os.Exit(1)
+	}
 }
