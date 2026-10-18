@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -543,21 +544,62 @@ func TestServerRunRunnerReusesDirectory(t *testing.T) {
 
 func TestEnsureRunnerScaleSet(t *testing.T) {
 	for _, test := range []struct {
-		name                  string
-		exists, conflict      bool
-		lookupErr, createErr  bool
-		wantGets, wantCreates int32
+		name                               string
+		exists, conflict                   bool
+		lookupErr, createErr, patchErr     bool
+		labels                             []string // Configured labels.
+		current                            string   // Labels of the existing scale set.
+		wantLabels                         []string // Labels after the first call.
+		wantGets, wantCreates, wantPatches int32
 	}{
 		{name: "reuse existing", exists: true, wantGets: 2},
 		{name: "create then restart", wantGets: 2, wantCreates: 1},
 		{name: "concurrent creation", conflict: true, wantGets: 3, wantCreates: 1},
 		{name: "lookup failure", lookupErr: true, wantGets: 1},
 		{name: "creation failure", createErr: true, wantGets: 2, wantCreates: 1},
+		{name: "labels changed", exists: true, labels: []string{"self-hosted", "linux"}, wantLabels: []string{"self-hosted", "linux"}, wantGets: 2, wantPatches: 1},
+		{name: "labels differ in case and order", exists: true, labels: []string{"Linux", "Self-Hosted"},
+			current: `[{"type":"System","name":"self-hosted"},{"type":"System","name":"linux"}]`, wantGets: 2},
+		{name: "default label", exists: true, labels: []string{}, wantGets: 2},
+		{name: "default label restored", exists: true, labels: []string{},
+			current: `[{"type":"System","name":"linux"}]`, wantLabels: []string{"smoke"}, wantGets: 2, wantPatches: 1},
+		{name: "update failure", exists: true, labels: []string{"linux"}, patchErr: true, wantGets: 1, wantPatches: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			if test.labels == nil {
+				test.labels = []string{"smoke"}
+			}
+			var mu sync.Mutex
+			current := test.current
+			if current == "" {
+				current = `[{"type":"System","name":"smoke"}]`
+			}
 			var exists atomic.Bool
 			exists.Store(test.exists)
-			var gets, creates atomic.Int32
+			var gets, creates, patches atomic.Int32
+			scaleSet := func() string {
+				mu.Lock()
+				defer mu.Unlock()
+				return `{"id":42,"name":"smoke","runnerGroupId":3,"labels":` + current + `}`
+			}
+			decode := func(r *http.Request) scaleset.RunnerScaleSet {
+				var request scaleset.RunnerScaleSet
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+				}
+				var names []string
+				for _, label := range request.Labels {
+					names = append(names, label.Name)
+				}
+				want := test.labels
+				if len(want) == 0 {
+					want = []string{"smoke"}
+				}
+				if request.Name != "smoke" || request.RunnerGroupID != 3 || !request.RunnerSetting.DisableUpdate || !slices.Equal(names, want) {
+					t.Errorf("incorrect %s request: %+v", r.Method, request)
+				}
+				return request
+			}
 			var api *httptest.Server
 			api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
@@ -580,19 +622,13 @@ func TestEnsureRunnerScaleSet(t *testing.T) {
 							w.WriteHeader(http.StatusBadRequest)
 							io.WriteString(w, `{"typeName":"LookupFailure"}`)
 						} else if exists.Load() {
-							io.WriteString(w, `{"count":1,"value":[{"id":42,"name":"smoke","runnerGroupId":3}]}`)
+							io.WriteString(w, `{"count":1,"value":[`+scaleSet()+`]}`)
 						} else {
 							io.WriteString(w, `{"count":0,"value":[]}`)
 						}
 					case http.MethodPost:
 						creates.Add(1)
-						var request scaleset.RunnerScaleSet
-						if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-							t.Error(err)
-						}
-						if request.Name != "smoke" || request.RunnerGroupID != 3 || !request.RunnerSetting.DisableUpdate || len(request.Labels) != 1 || request.Labels[0].Name != "smoke" {
-							t.Errorf("incorrect create request: %+v", request)
-						}
+						decode(r)
 						if test.conflict {
 							exists.Store(true)
 							w.WriteHeader(http.StatusBadRequest)
@@ -602,12 +638,30 @@ func TestEnsureRunnerScaleSet(t *testing.T) {
 							io.WriteString(w, `{"typeName":"CreateFailure"}`)
 						} else {
 							exists.Store(true)
-							io.WriteString(w, `{"id":42,"name":"smoke","runnerGroupId":3}`)
+							io.WriteString(w, scaleSet())
 						}
 					default:
 						t.Errorf("unexpected method: %s", r.Method)
 						w.WriteHeader(http.StatusMethodNotAllowed)
 					}
+				case "/_apis/runtime/runnerscalesets/42":
+					if r.Method != http.MethodPatch {
+						t.Errorf("unexpected method: %s", r.Method)
+						w.WriteHeader(http.StatusMethodNotAllowed)
+						return
+					}
+					patches.Add(1)
+					request := decode(r)
+					if test.patchErr {
+						w.WriteHeader(http.StatusBadRequest)
+						io.WriteString(w, `{"typeName":"UpdateFailure"}`)
+						return
+					}
+					data, _ := json.Marshal(request.Labels)
+					mu.Lock()
+					current = string(data)
+					mu.Unlock()
+					io.WriteString(w, scaleSet())
 				default:
 					t.Errorf("unexpected endpoint: %s", r.URL.Path)
 					w.WriteHeader(http.StatusNotFound)
@@ -620,10 +674,10 @@ func TestEnsureRunnerScaleSet(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			group := &Group{Name: "smoke", Labels: []string{"smoke"}}
-			for range 2 {
+			group := &Group{Name: "smoke", Labels: test.labels}
+			for call := range 2 {
 				scaleSet, err := ensureRunnerScaleSet(ctx, client, 3, group)
-				if test.lookupErr || test.createErr {
+				if test.lookupErr || test.createErr || test.patchErr {
 					if err == nil {
 						t.Fatal("API failure was ignored")
 					}
@@ -632,9 +686,18 @@ func TestEnsureRunnerScaleSet(t *testing.T) {
 				if err != nil || scaleSet == nil || scaleSet.ID != 42 {
 					t.Fatalf("scale set: %+v, %v", scaleSet, err)
 				}
+				if call == 0 && test.wantLabels != nil {
+					var names []string
+					for _, label := range scaleSet.Labels {
+						names = append(names, label.Name)
+					}
+					if !slices.Equal(names, test.wantLabels) {
+						t.Errorf("labels after update = %q, want %q", names, test.wantLabels)
+					}
+				}
 			}
-			if gets.Load() != test.wantGets || creates.Load() != test.wantCreates {
-				t.Errorf("GET=%d POST=%d; want GET=%d POST=%d", gets.Load(), creates.Load(), test.wantGets, test.wantCreates)
+			if gets.Load() != test.wantGets || creates.Load() != test.wantCreates || patches.Load() != test.wantPatches {
+				t.Errorf("GET=%d POST=%d PATCH=%d; want GET=%d POST=%d PATCH=%d", gets.Load(), creates.Load(), patches.Load(), test.wantGets, test.wantCreates, test.wantPatches)
 			}
 		})
 	}
@@ -666,7 +729,7 @@ func TestRunRetriesSessionWithoutInterruptingRunners(t *testing.T) {
 			token := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256"}`)) + "." + base64.RawURLEncoding.EncodeToString(claims) + ".c2ln"
 			json.NewEncoder(w).Encode(map[string]string{"url": api.URL + "/", "token": token})
 		case r.URL.Path == "/_apis/runtime/runnerscalesets":
-			io.WriteString(w, `{"count":1,"value":[{"id":42,"name":"smoke","runnerGroupId":1}]}`)
+			io.WriteString(w, `{"count":1,"value":[{"id":42,"name":"smoke","runnerGroupId":1,"labels":[{"type":"System","name":"smoke"}]}]}`)
 		case r.URL.Path == "/_apis/runtime/runnerscalesets/42/sessions" && r.Method == http.MethodPost:
 			n := sessions.Add(1)
 			if n == 1 {

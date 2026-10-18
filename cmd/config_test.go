@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -208,10 +209,17 @@ func TestSecretTake(t *testing.T) {
 		{secret: Secret{"env", "HRC_TEST_UNSET_SECRET"}, err: "is empty"},
 		{secret: Secret{"file", key}, want: "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----"},
 		{secret: Secret{"file", blank}, err: "is empty"},
-		{secret: Secret{"file", filepath.Join(dir, "missing")}, err: "no such file"},
+		{secret: Secret{"file", filepath.Join(dir, "missing")}},
 	} {
 		t.Run(tt.secret.Src+"/"+filepath.Base(tt.secret.Value), func(t *testing.T) {
 			got, err := tt.secret.Take()
+			if filepath.Base(tt.secret.Value) == "missing" {
+				// The message differs between platforms; the error does not.
+				if !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("error = %v, want os.ErrNotExist", err)
+				}
+				return
+			}
 			checkError(t, err, tt.err)
 			if got != tt.want {
 				t.Errorf("Take = %q, want %q", got, tt.want)

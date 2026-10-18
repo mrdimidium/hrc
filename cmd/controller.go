@@ -12,6 +12,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -221,32 +222,69 @@ func serve(ctx context.Context, cfg *Config, group *Group, host *slots, dirs *di
 	return nil
 }
 
+// ensureRunnerScaleSet finds or creates the group's scale set and brings its
+// labels in line with the configuration, so a label change takes effect on
+// the next session instead of requiring the scale set to be deleted.
 func ensureRunnerScaleSet(ctx context.Context, client *scaleset.Client, runnerGroupID int, group *Group) (*scaleset.RunnerScaleSet, error) {
+	// Without configured labels, GitHub routes by the scale set name.
+	labels := []scaleset.Label{{Name: group.Name}}
+	if len(group.Labels) > 0 {
+		labels = make([]scaleset.Label, 0, len(group.Labels))
+		for _, label := range group.Labels {
+			labels = append(labels, scaleset.Label{Name: label})
+		}
+	}
+	desired := func() *scaleset.RunnerScaleSet {
+		return &scaleset.RunnerScaleSet{
+			Name: group.Name, RunnerGroupID: runnerGroupID, Labels: slices.Clone(labels),
+			RunnerSetting: scaleset.RunnerSetting{DisableUpdate: true},
+		}
+	}
+
 	scaleSet, err := client.GetRunnerScaleSet(ctx, runnerGroupID, group.Name)
 	if err != nil {
 		return nil, fmt.Errorf("get scale set: %w", err)
 	}
-	if scaleSet != nil {
+	if scaleSet == nil {
+		scaleSet, err = client.CreateRunnerScaleSet(ctx, desired())
+		if err == nil {
+			return scaleSet, nil
+		}
+		// Another host can create the same scale set between our lookup and POST.
+		// The API also returns a conflict when a retried POST already succeeded.
+		existing, lookupErr := client.GetRunnerScaleSet(ctx, runnerGroupID, group.Name)
+		if lookupErr != nil || existing == nil {
+			return nil, fmt.Errorf("create scale set: %w", err)
+		}
+		scaleSet = existing
+	}
+	if sameLabels(scaleSet.Labels, labels) {
 		return scaleSet, nil
 	}
+	updated, err := client.UpdateRunnerScaleSet(ctx, scaleSet.ID, desired())
+	if err != nil {
+		return nil, fmt.Errorf("update scale set labels: %w", err)
+	}
+	names := make([]string, 0, len(labels))
+	for _, label := range labels {
+		names = append(names, label.Name)
+	}
+	slog.Info("Updated runner scale set labels", "group", group.Name, "id", scaleSet.ID, "labels", names)
+	return updated, nil
+}
 
-	labels := make([]scaleset.Label, 0, len(group.Labels))
-	for _, label := range group.Labels {
-		labels = append(labels, scaleset.Label{Name: label})
+// sameLabels compares label names as sets: runs-on matching ignores order
+// and case.
+func sameLabels(current, desired []scaleset.Label) bool {
+	names := func(labels []scaleset.Label) []string {
+		result := make([]string, 0, len(labels))
+		for _, label := range labels {
+			result = append(result, strings.ToLower(label.Name))
+		}
+		slices.Sort(result)
+		return slices.Compact(result)
 	}
-	scaleSet, err = client.CreateRunnerScaleSet(ctx, &scaleset.RunnerScaleSet{
-		Name: group.Name, RunnerGroupID: runnerGroupID, Labels: labels,
-		RunnerSetting: scaleset.RunnerSetting{DisableUpdate: true},
-	})
-	if err == nil {
-		return scaleSet, nil
-	}
-	// Another host can create the same scale set between our lookup and POST.
-	// The API also returns a conflict when a retried POST already succeeded.
-	if existing, lookupErr := client.GetRunnerScaleSet(ctx, runnerGroupID, group.Name); lookupErr == nil && existing != nil {
-		return existing, nil
-	}
-	return nil, fmt.Errorf("create scale set: %w", err)
+	return slices.Equal(names(current), names(desired))
 }
 
 // runRunner registers and runs one ephemeral runner. Without dirs, it runs in
