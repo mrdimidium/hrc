@@ -295,7 +295,7 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 	if err != nil {
 		t.Fatal(err)
 	}
-	localConfig := registration.workerConfig(dir)
+	localConfig := registration.workerConfig(dir, false)
 	localConfig.Env = []string{"WORKER_ENV=override", "WORKER_TEST_MODE=" + mode}
 	localConfig.Stdout, localConfig.Stderr = io.Discard, io.Discard
 	local, err := worker.New(localConfig)
@@ -450,7 +450,7 @@ func TestServerRunRunnerUsesWorker(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			err = runRunner(ctx, client, 7, cfg, worker.dir)
+			err = runRunner(ctx, client, 7, cfg, worker.dir, nil)
 			if mode == "success" || mode == "failure" {
 				if err != nil {
 					t.Fatalf("workflow result treated as infrastructure error: %v", err)
@@ -469,6 +469,75 @@ func TestServerRunRunnerUsesWorker(t *testing.T) {
 				t.Error("source installation removed")
 			}
 		})
+	}
+}
+
+func TestServerRunRunnerReusesDirectory(t *testing.T) {
+	// Each job needs its own fixture: every runner has its own credentials.
+	runner, completed, _, _, _ := controllerFixture(t, "success")
+	second, completedSecond, _, _, _ := controllerFixture(t, "success")
+	jits := []string{runner.jit, second.jit}
+	env := "WORKER_ENV=override\nDOTENV_VALUE=present\nWORKER_TEST_MODE=success\n"
+	if err := os.WriteFile(filepath.Join(runner.dir, ".env"), []byte(env), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	var api *httptest.Server
+	api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v3/orgs/org/actions/runners/registration-token":
+			w.WriteHeader(http.StatusCreated)
+			io.WriteString(w, `{"token":"registration"}`)
+		case "/api/v3/actions/runner-registration":
+			claims, _ := json.Marshal(map[string]int64{"exp": time.Now().Add(time.Hour).Unix()})
+			token := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256"}`)) + "." + base64.RawURLEncoding.EncodeToString(claims) + ".c2ln"
+			json.NewEncoder(w).Encode(map[string]string{"url": api.URL + "/", "token": token})
+		case "/_apis/runtime/runnerscalesets/7/generatejitconfig":
+			var settings map[string]any
+			json.NewDecoder(r.Body).Decode(&settings)
+			names = append(names, fmt.Sprint(settings["name"]))
+			json.NewEncoder(w).Encode(map[string]string{"encodedJITConfig": jits[len(names)-1]})
+		default:
+			t.Errorf("unexpected scaleset endpoint: %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer api.Close()
+	client, err := scaleset.NewClientWithPersonalAccessToken(scaleset.NewClientWithPersonalAccessTokenConfig{GitHubConfigURL: api.URL + "/org", PersonalAccessToken: "pat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cfg := &Config{Id: "host", DirBuilds: t.TempDir()}
+	dirs := newDirPool(cfg.DirBuilds, "smoke")
+	cached := filepath.Join(cfg.DirBuilds, "smoke-1", "_work", "cache")
+	for job := range 2 {
+		if err := runRunner(ctx, client, 7, cfg, runner.dir, dirs); err != nil {
+			t.Fatalf("job %d: %v", job, err)
+		}
+		if job == 0 {
+			// The fake Worker creates no workspace; stand in for a real job.
+			if err := os.MkdirAll(filepath.Dir(cached), 0700); err != nil {
+				t.Fatalf("directory of the first job was removed: %v", err)
+			}
+			if err := os.WriteFile(cached, []byte("warm"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if data, err := os.ReadFile(cached); err != nil || string(data) != "warm" {
+		t.Errorf("workspace not reused: %q %v", data, err)
+	}
+	if completed.Load() != 1 || completedSecond.Load() != 1 {
+		t.Errorf("complete=%d,%d, want both jobs completed", completed.Load(), completedSecond.Load())
+	}
+	if len(names) != 2 || names[0] == names[1] || !strings.HasPrefix(names[0], "host-smoke-1-") || !strings.HasPrefix(names[1], "host-smoke-1-") {
+		t.Errorf("runner names %q: want distinct names of directory smoke-1", names)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.DirBuilds, "smoke-1", ".runner")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("runner settings remain: %v", err)
 	}
 }
 

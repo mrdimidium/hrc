@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,10 +56,15 @@ func run(ctx context.Context, cfg *Config, group *Group, host *slots) error {
 	var running atomic.Int32
 	defer runners.Wait()
 
+	var dirs *dirPool
+	if group.ReuseDirs {
+		dirs = newDirPool(cfg.DirBuilds, group.Name)
+	}
+
 	delay := sessionRetryMin
 	for {
 		started := time.Now()
-		err := serve(ctx, cfg, group, host, runnerDir, &runners, &running)
+		err := serve(ctx, cfg, group, host, dirs, runnerDir, &runners, &running)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -79,7 +85,7 @@ func run(ctx context.Context, cfg *Config, group *Group, host *slots) error {
 
 // serve connects the group's scale set and starts runners for assigned jobs
 // until the session fails or ctx is canceled.
-func serve(ctx context.Context, cfg *Config, group *Group, host *slots, runnerDir string, runners *sync.WaitGroup, running *atomic.Int32) error {
+func serve(ctx context.Context, cfg *Config, group *Group, host *slots, dirs *dirPool, runnerDir string, runners *sync.WaitGroup, running *atomic.Int32) error {
 	logger := slog.Default().With("group", group.Name)
 	info := scaleset.SystemInfo{System: "hrc", Version: Version}
 
@@ -150,7 +156,7 @@ func serve(ctx context.Context, cfg *Config, group *Group, host *slots, runnerDi
 						running.Add(-1)
 						return
 					}
-					err := runRunner(ctx, client, scaleSet.ID, cfg, runnerDir)
+					err := runRunner(ctx, client, scaleSet.ID, cfg, runnerDir, dirs)
 					// Leave the group's count before the slot is advertised again.
 					running.Add(-1)
 					host.release()
@@ -239,24 +245,39 @@ func ensureRunnerScaleSet(ctx context.Context, client *scaleset.Client, runnerGr
 	return nil, fmt.Errorf("create scale set: %w", err)
 }
 
-func runRunner(ctx context.Context, client *scaleset.Client, scaleSetID int, cfg *Config, runnerDir string) error {
-	dir, err := os.MkdirTemp(cfg.DirBuilds, "runner-")
-	if err != nil {
-		return fmt.Errorf("create runner directory: %w", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(dir); err != nil {
-			slog.Error("Remove runner directory", "dir", dir, "err", err)
+// runRunner registers and runs one ephemeral runner. Without dirs, it runs in
+// a temporary copy of the runner, removed afterwards; otherwise it runs in a
+// directory reused from the pool, and leaves the job's processes running.
+func runRunner(ctx context.Context, client *scaleset.Client, scaleSetID int, cfg *Config, runnerDir string, dirs *dirPool) error {
+	var dir, name string
+	if dirs == nil {
+		var err error
+		if dir, err = os.MkdirTemp(cfg.DirBuilds, "runner-"); err != nil {
+			return fmt.Errorf("create runner directory: %w", err)
 		}
-	}()
-	if err := os.CopyFS(dir, os.DirFS(runnerDir)); err != nil {
-		return fmt.Errorf("copy runner: %w", err)
+		defer func() {
+			if err := os.RemoveAll(dir); err != nil {
+				slog.Error("Remove runner directory", "dir", dir, "err", err)
+			}
+		}()
+		if err := os.CopyFS(dir, os.DirFS(runnerDir)); err != nil {
+			return fmt.Errorf("copy runner: %w", err)
+		}
+		name = cfg.Id + "-" + filepath.Base(dir)
+	} else {
+		var release func()
+		dir, release = dirs.take()
+		defer release()
+		if err := installRunner(dir, runnerDir); err != nil {
+			return err
+		}
+		// A runner left registered by a crash must not block the name.
+		name = fmt.Sprintf("%s-%s-%06x", cfg.Id, filepath.Base(dir), rand.Uint32()&0xffffff)
 	}
 	version, err := os.ReadFile(filepath.Join(dir, "VERSION"))
 	if err != nil {
 		return fmt.Errorf("read runner version: %w", err)
 	}
-	name := cfg.Id + "-" + filepath.Base(dir)
 	jit, err := client.GenerateJitRunnerConfig(ctx, &scaleset.RunnerScaleSetJitRunnerSetting{
 		Name: name, WorkFolder: "_work",
 	}, scaleSetID)
@@ -267,7 +288,7 @@ func runRunner(ctx context.Context, client *scaleset.Client, scaleSetID int, cfg
 	if err != nil {
 		return fmt.Errorf("decode runner config: %w", err)
 	}
-	local, err := worker.New(registration.workerConfig(dir))
+	local, err := worker.New(registration.workerConfig(dir, dirs != nil))
 	if err != nil {
 		return fmt.Errorf("create Worker: %w", err)
 	}

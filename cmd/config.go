@@ -52,6 +52,10 @@ type Group struct {
 	Group  string   `json:"group"`
 	Labels []string `json:"labels"`
 
+	// ReuseDirs keeps runner directories, with their workspaces, between jobs
+	// and leaves processes started by a job, such as build servers, running.
+	ReuseDirs bool `json:"reuseDirs"`
+
 	Token     Secret                 `json:"pat"`
 	GitHubApp scaleset.GitHubAppAuth `json:"app"`
 }
@@ -75,6 +79,10 @@ func (c *Group) Validate() error {
 
 	if c.Name == "" {
 		return fmt.Errorf("name is required")
+	}
+	// The name becomes a directory name when directories are reused.
+	if c.ReuseDirs && (strings.ContainsAny(c.Name, `/\:`) || c.Name == "." || c.Name == "..") {
+		return fmt.Errorf("name %q cannot be a directory name, which reuseDirs requires", c.Name)
 	}
 
 	for i, label := range c.Labels {

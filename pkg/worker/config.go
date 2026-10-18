@@ -42,6 +42,15 @@ type Config struct {
 	MonitorSocket string
 	DisableUpdate bool
 
+	// KeepDescendants leaves processes that outlive a Worker which exited on
+	// its own, so build servers can serve later jobs. On Unix it changes
+	// nothing: daemons leave the Worker's process group with setsid and survive
+	// anyway, while other descendants are still killed. On Windows, job
+	// membership is inherited and only breakaway leaves it, so every remaining
+	// process is kept, including after the controller itself crashes. Forced
+	// termination by Close or a failed startup still kills the whole tree.
+	KeepDescendants bool
+
 	// Stdout and Stderr default to os.Stdout and os.Stderr. A writer shared by
 	// both streams must support concurrent Write calls.
 	Stdout, Stderr io.Writer

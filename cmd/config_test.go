@@ -60,6 +60,11 @@ func TestGroupValidate(t *testing.T) {
 		{"empty label", func(g *Group) { g.Labels = []string{"linux", ""} }, "label at index 1 is empty"},
 		{"blank label", func(g *Group) { g.Labels = []string{" \t"} }, "label at index 0 is empty"},
 		{"credentials", func(g *Group) { g.Token = Secret{} }, "no credentials provided"},
+		{"reused directory", func(g *Group) { g.ReuseDirs = true }, ""},
+		{"reused directory path", func(g *Group) { g.ReuseDirs, g.Name = true, "linux/x64" }, "cannot be a directory name"},
+		{"reused directory backslash", func(g *Group) { g.ReuseDirs, g.Name = true, `linux\x64` }, "cannot be a directory name"},
+		{"reused directory parent", func(g *Group) { g.ReuseDirs, g.Name = true, ".." }, "cannot be a directory name"},
+		{"path without reuse", func(g *Group) { g.Name = "linux/x64" }, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			g := Group{Url: "https://github.com/org/repo", Name: "runners", Token: Secret{"inline", "token"}}

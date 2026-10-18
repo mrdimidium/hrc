@@ -7,6 +7,7 @@ package worker
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -35,8 +36,13 @@ func TestWorkerUnixSymlinkDirectory(t *testing.T) {
 }
 
 func TestWorkerUnixExitKillsDescendants(t *testing.T) {
-	for _, code := range []int{17, 100} {
-		t.Run(strconv.Itoa(code), func(t *testing.T) {
+	for _, tt := range []struct {
+		code int
+		keep bool
+	}{{17, false}, {100, false}, {100, true}} {
+		code := tt.code
+		// KeepDescendants spares only daemons that left the process group.
+		t.Run(fmt.Sprintf("%d/keep=%t", code, tt.keep), func(t *testing.T) {
 			// Keep the socket path below Unix's limit even with long test names.
 			dir, err := os.MkdirTemp("", "hrc-child-")
 			if err != nil {
@@ -54,6 +60,7 @@ func TestWorkerUnixExitKillsDescendants(t *testing.T) {
 			}
 			config, _ := workerTestConfig(t, "descendant_exit", 1)
 			config.Env = append(config.Env, "HRC_WORKER_TEST_CHILD_SOCKET="+socket, "HRC_WORKER_TEST_EXIT="+strconv.Itoa(code))
+			config.KeepDescendants = tt.keep
 			w := newTestWorker(t, config)
 			if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
 				t.Fatal(err)

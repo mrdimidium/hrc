@@ -82,6 +82,7 @@ type Worker struct {
 	processStarted bool
 	running        bool
 	closed         bool
+	exited         bool // The process exited on its own, rather than being killed.
 
 	startCancel context.CancelFunc
 	cmd         *exec.Cmd
@@ -182,6 +183,9 @@ func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage) (err err
 				exitErr = &ExitError{Code: code}
 			}
 		}
+		w.mu.Lock()
+		w.exited = true
+		w.mu.Unlock()
 		w.finish(result, exitErr)
 	}()
 	return nil
@@ -320,8 +324,12 @@ func (w *Worker) Close() error {
 
 func (w *Worker) finish(result Result, err error) error {
 	// The worker can exit before its descendants. Clean up the process tree
-	// before publishing Done, even when Close has not been called yet.
-	if w.cmd != nil && w.cmd.Process != nil {
+	// before publishing Done, even when Close has not been called yet, unless
+	// the caller keeps the descendants of a process that exited on its own.
+	w.mu.Lock()
+	keep := w.exited && w.keepDescendants()
+	w.mu.Unlock()
+	if w.cmd != nil && w.cmd.Process != nil && !keep {
 		err = errors.Join(err, w.kill())
 	}
 	w.closePipes()

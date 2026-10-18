@@ -63,3 +63,46 @@ func TestWorkerWindowsJobKillsDescendants(t *testing.T) {
 		t.Fatal("Worker was not reaped")
 	}
 }
+
+func TestWorkerWindowsKeepDescendants(t *testing.T) {
+	config, output := workerTestConfig(t, "descendant_exit", 1)
+	config.Env = append(config.Env, "HRC_WORKER_TEST_EXIT=100")
+	config.KeepDescendants = true
+	w := newTestWorker(t, config)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := w.StartJob(ctx, workerProcessTestJob(0)); err != nil {
+		t.Fatal(err)
+	}
+	var pid uint32
+	for pid == 0 && ctx.Err() == nil {
+		for _, line := range strings.Split(output.String(), "\n") {
+			if strings.HasPrefix(line, "descendant ") {
+				fmt.Sscanf(line, "descendant %d", &pid)
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if pid == 0 {
+		t.Fatal("Worker did not start a descendant")
+	}
+	child, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_TERMINATE, false, pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(child)
+	defer windows.TerminateProcess(child, 1)
+	if err := w.CancelJob(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := waitTestWorker(t, w); result != Succeeded || err != nil {
+		t.Fatalf("worker exit = %v, %v", result, err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Neither exit nor Close may terminate a kept descendant.
+	if state, err := windows.WaitForSingleObject(child, 500); err != nil || state != uint32(windows.WAIT_TIMEOUT) {
+		t.Fatalf("kept descendant was terminated: %d %v", state, err)
+	}
+}

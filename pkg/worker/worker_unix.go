@@ -21,6 +21,9 @@ func (w *Worker) configurePlatform() error {
 }
 
 func (w *Worker) startedPlatform() error { return nil }
+
+// keepDescendants is false: only daemons that left the process group survive.
+func (w *Worker) keepDescendants() bool { return false }
 func (w *Worker) closePlatform()         {}
 
 func (w *Worker) killProcessTree() error {
