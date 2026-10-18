@@ -92,8 +92,12 @@ func serve(ctx context.Context, cfg *Config, group *Group, host *slots, dirs *di
 	var err error
 	var client *scaleset.Client
 	if group.GitHubApp.Validate() == nil {
+		var auth scaleset.GitHubAppAuth
+		if auth, err = group.GitHubApp.auth(); err != nil {
+			return err
+		}
 		client, err = scaleset.NewClientWithGitHubApp(scaleset.ClientWithGitHubAppConfig{
-			GitHubConfigURL: group.Url, GitHubAppAuth: group.GitHubApp, SystemInfo: info,
+			GitHubConfigURL: group.Url, GitHubAppAuth: auth, SystemInfo: info,
 		})
 	} else {
 		var token string
@@ -101,7 +105,7 @@ func serve(ctx context.Context, cfg *Config, group *Group, host *slots, dirs *di
 			return fmt.Errorf("read token: %w", err)
 		}
 		client, err = scaleset.NewClientWithPersonalAccessToken(scaleset.NewClientWithPersonalAccessTokenConfig{
-			GitHubConfigURL: group.Url, PersonalAccessToken: strings.TrimSpace(token), SystemInfo: info,
+			GitHubConfigURL: group.Url, PersonalAccessToken: token, SystemInfo: info,
 		})
 	}
 	if err != nil {

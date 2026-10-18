@@ -30,20 +30,59 @@ func (c *Secret) Validate() error {
 	return nil
 }
 
+// Take returns the secret without surrounding whitespace, such as the newline
+// that ends a secret file. An empty secret is an error.
 func (c *Secret) Take() (string, error) {
+	var value string
 	switch c.Src {
 	case "env":
-		return os.Getenv(c.Value), nil
+		value = os.Getenv(c.Value)
 	case "file":
 		data, err := os.ReadFile(c.Value)
 		if err != nil {
 			return "", err
 		}
-		return string(data), nil
+		value = string(data)
 	case "inline":
-		return c.Value, nil
+		value = c.Value
+	default:
+		return "", fmt.Errorf("unknown secret type")
 	}
-	return "", fmt.Errorf("unknown secret type")
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("%s secret %q is empty", c.Src, c.Value)
+	}
+	return value, nil
+}
+
+// GitHubApp authenticates as an installation of a GitHub App. Only the
+// private key is a secret.
+type GitHubApp struct {
+	ClientID       string `json:"clientId"`
+	InstallationID int64  `json:"installationId"`
+	PrivateKey     Secret `json:"privateKey"`
+}
+
+func (a *GitHubApp) Validate() error {
+	if a.ClientID == "" {
+		return fmt.Errorf("client ID is required")
+	}
+	if a.InstallationID <= 0 {
+		return fmt.Errorf("installation ID is required")
+	}
+	if err := a.PrivateKey.Validate(); err != nil {
+		return fmt.Errorf("invalid private key: %w", err)
+	}
+	return nil
+}
+
+// auth reads the private key, which is kept only as long as the client.
+func (a *GitHubApp) auth() (scaleset.GitHubAppAuth, error) {
+	key, err := a.PrivateKey.Take()
+	if err != nil {
+		return scaleset.GitHubAppAuth{}, fmt.Errorf("read private key: %w", err)
+	}
+	return scaleset.GitHubAppAuth{ClientID: a.ClientID, InstallationID: a.InstallationID, PrivateKey: key}, nil
 }
 
 type Group struct {
@@ -56,8 +95,8 @@ type Group struct {
 	// and leaves processes started by a job, such as build servers, running.
 	ReuseDirs bool `json:"reuseDirs"`
 
-	Token     Secret                 `json:"pat"`
-	GitHubApp scaleset.GitHubAppAuth `json:"app"`
+	Token     Secret    `json:"pat"`
+	GitHubApp GitHubApp `json:"app"`
 }
 
 func (c *Group) defaults() {

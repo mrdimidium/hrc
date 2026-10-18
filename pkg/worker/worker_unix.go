@@ -21,10 +21,10 @@ func (w *Worker) configurePlatform() error {
 }
 
 func (w *Worker) startedPlatform() error { return nil }
+func (w *Worker) closePlatform()         {}
 
 // keepDescendants is false: only daemons that left the process group survive.
 func (w *Worker) keepDescendants() bool { return false }
-func (w *Worker) closePlatform()         {}
 
 func (w *Worker) killProcessTree() error {
 	group, err := os.FindProcess(-w.cmd.Process.Pid)

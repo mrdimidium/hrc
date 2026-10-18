@@ -6,6 +6,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -49,7 +50,7 @@ func TestGroupValidate(t *testing.T) {
 			g.Token = Secret{}
 			g.GitHubApp.ClientID = "client"
 			g.GitHubApp.InstallationID = 1
-			g.GitHubApp.PrivateKey = "key"
+			g.GitHubApp.PrivateKey = Secret{"inline", "key"}
 		}, ""},
 		{"URL", func(g *Group) { g.Url = "://invalid" }, "invalid registration URL"},
 		{"relative URL", func(g *Group) { g.Url = "/org/repo" }, "invalid registration URL"},
@@ -60,6 +61,10 @@ func TestGroupValidate(t *testing.T) {
 		{"empty label", func(g *Group) { g.Labels = []string{"linux", ""} }, "label at index 1 is empty"},
 		{"blank label", func(g *Group) { g.Labels = []string{" \t"} }, "label at index 0 is empty"},
 		{"credentials", func(g *Group) { g.Token = Secret{} }, "no credentials provided"},
+		{"app without key", func(g *Group) {
+			g.Token = Secret{}
+			g.GitHubApp = GitHubApp{ClientID: "client", InstallationID: 1}
+		}, "no credentials provided"},
 		{"reused directory", func(g *Group) { g.ReuseDirs = true }, ""},
 		{"reused directory path", func(g *Group) { g.ReuseDirs, g.Name = true, "linux/x64" }, "cannot be a directory name"},
 		{"reused directory backslash", func(g *Group) { g.ReuseDirs, g.Name = true, `linux\x64` }, "cannot be a directory name"},
@@ -180,5 +185,62 @@ func TestByteSizeString(t *testing.T) {
 		if got := size.String(); got != want {
 			t.Errorf("ByteSize(%d) = %q, want %q", uint64(size), got, want)
 		}
+	}
+}
+
+func TestSecretTake(t *testing.T) {
+	dir := t.TempDir()
+	key := filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(key, []byte("-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	blank := filepath.Join(dir, "blank")
+	if err := os.WriteFile(blank, []byte("\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HRC_TEST_SECRET", " token\n")
+	for _, tt := range []struct {
+		secret    Secret
+		want, err string
+	}{
+		{secret: Secret{"inline", "token"}, want: "token"},
+		{secret: Secret{"env", "HRC_TEST_SECRET"}, want: "token"},
+		{secret: Secret{"env", "HRC_TEST_UNSET_SECRET"}, err: "is empty"},
+		{secret: Secret{"file", key}, want: "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----"},
+		{secret: Secret{"file", blank}, err: "is empty"},
+		{secret: Secret{"file", filepath.Join(dir, "missing")}, err: "no such file"},
+	} {
+		t.Run(tt.secret.Src+"/"+filepath.Base(tt.secret.Value), func(t *testing.T) {
+			got, err := tt.secret.Take()
+			checkError(t, err, tt.err)
+			if got != tt.want {
+				t.Errorf("Take = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigGitHubApp(t *testing.T) {
+	dir := t.TempDir()
+	key := filepath.Join(dir, "app.pem")
+	if err := os.WriteFile(key, []byte("pem\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "config.json")
+	content := `{"id":"host","groups":[{"url":"https://github.com/org","name":"runners",` +
+		`"app":{"clientId":"Iv1.client","installationId":42,"privateKey":{"type":"file","value":` + strconv.Quote(key) + `}}}]}`
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth, err := cfg.Groups[0].GitHubApp.auth()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if auth.ClientID != "Iv1.client" || auth.InstallationID != 42 || auth.PrivateKey != "pem" {
+		t.Errorf("GitHub App auth = %+v", auth)
 	}
 }
