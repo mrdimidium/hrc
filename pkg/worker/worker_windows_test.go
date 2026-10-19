@@ -8,12 +8,59 @@ package worker
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/windows"
 )
+
+// sendConsoleCtrlC ignores Ctrl+C in the calling process and sends it to every
+// process on its console, as the runner does to cancel a step.
+func sendConsoleCtrlC() error {
+	if r, _, err := windows.NewLazySystemDLL("kernel32.dll").NewProc("SetConsoleCtrlHandler").Call(0, 1); r == 0 {
+		return err
+	}
+	return windows.GenerateConsoleCtrlEvent(windows.CTRL_C_EVENT, 0)
+}
+
+// A Ctrl+C a job sends to its console must not reach the controller, which
+// takes it as a request to stop.
+func TestWorkerWindowsOwnConsole(t *testing.T) {
+	// Give the test a console for the Worker to share, as a service has. This
+	// fails when the test already has one.
+	windows.NewLazySystemDLL("kernel32.dll").NewProc("AllocConsole").Call()
+	interrupts := make(chan os.Signal, 1)
+	signal.Notify(interrupts, os.Interrupt)
+	defer signal.Stop(interrupts)
+
+	config, output := workerTestConfig(t, "ctrl_c", 1)
+	w := newTestWorker(t, config)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := w.StartJob(ctx, workerProcessTestJob(0)); err != nil {
+		t.Fatal(err)
+	}
+	for !strings.Contains(output.String(), "ctrl_c sent") {
+		select {
+		case <-w.Done():
+			t.Fatalf("Worker exited before sending Ctrl+C: %s", output.String())
+		case <-ctx.Done():
+			t.Fatal("Worker did not send Ctrl+C")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	select {
+	case <-interrupts:
+		t.Fatal("the Worker's Ctrl+C reached the controller")
+	case <-time.After(time.Second):
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestWorkerWindowsJobKillsDescendants(t *testing.T) {
 	config, output := workerTestConfig(t, "descendant", 1)

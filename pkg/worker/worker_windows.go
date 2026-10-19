@@ -36,7 +36,11 @@ func (w *Worker) configurePlatform() error {
 	}
 	input, output := w.pipes[0].Fd(), w.pipes[3].Fd()
 	w.cmd.Args = append(w.cmd.Args, "spawnclient", strconv.FormatUint(uint64(input), 10), strconv.FormatUint(uint64(output), 10))
+	// The runner cancels a step with GenerateConsoleCtrlEvent on the step's
+	// console, which reaches every process attached to it. A console of its own
+	// keeps that Ctrl+C away from the controller and the other Workers.
 	w.cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags:              windows.CREATE_NO_WINDOW,
 		AdditionalInheritedHandles: []syscall.Handle{syscall.Handle(input), syscall.Handle(output)},
 	}
 	job, err := windows.CreateJobObject(nil, nil)
