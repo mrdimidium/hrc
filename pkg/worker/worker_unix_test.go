@@ -102,3 +102,6 @@ func TestWorkerUnixExitKillsDescendants(t *testing.T) {
 		})
 	}
 }
+
+// Console control events exist only on Windows.
+func sendConsoleCtrlC() error { return errors.ErrUnsupported }

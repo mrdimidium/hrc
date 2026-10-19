@@ -151,6 +151,16 @@ func workerProcessTestChild() int {
 		}
 		return 103
 	}
+	if os.Getenv("HRC_WORKER_TEST_MODE") == "ctrl_c" {
+		// Cancel a step the way the runner does: Ctrl+C to the whole console.
+		if err := sendConsoleCtrlC(); err != nil {
+			fmt.Fprintln(os.Stderr, "ctrl_c", err)
+			return 34
+		}
+		fmt.Fprintln(os.Stdout, "ctrl_c sent")
+		time.Sleep(time.Hour)
+		return 35
+	}
 	if os.Getenv("HRC_WORKER_TEST_MODE") == "ignore" {
 		time.Sleep(time.Hour)
 	}
