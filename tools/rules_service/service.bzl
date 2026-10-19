@@ -62,7 +62,9 @@ def _service_files_impl(ctx):
     for kind, filename in [("systemd", name + ".systemd"), ("openrc", name + ".alpine"), ("launchd", "org." + name + ".plist"), ("winsw", name + ".winsw.xml")]:
         macos = kind == "launchd"
         config = (prefix + "/etc/" if macos else "/etc/") + name + "/" + name + ".json"
-        state = ("/Library/Application Support/" if macos else "/var/lib/") + name
+        # The GitHub runner passes script paths to the shell unquoted, so job
+        # directories, and with them the state, must not contain spaces.
+        state = (prefix + "/var/" if macos else "/var/lib/") + name
         log = ("/Library/Logs/" if macos else "/var/log/") + name
         if kind == "winsw":
             # The independent installer resolves this placeholder at installation time.

@@ -22,7 +22,9 @@ case $os in
     Darwin)
         target_os=darwin
         config_dir="$prefix/etc/@NAME@"
-        state_dir='/Library/Application Support/@NAME@'; log_dir=/Library/Logs/@NAME@
+        # Not /Library/Application Support: the GitHub runner passes script
+        # paths to the shell unquoted, so the state must not contain spaces.
+        state_dir="$prefix/var/@NAME@"; log_dir=/Library/Logs/@NAME@
         ;;
     *) echo "@NAME@: unsupported OS: $os" >&2; exit 1 ;;
 esac
@@ -48,6 +50,10 @@ install_file() {
 }
 
 prepare_dirs() {
+    # Missing parents, such as $prefix/etc and $prefix/var on macOS, are created
+    # world-readable; under the installer's umask 0077 they would lock the
+    # account out. Existing directories are left as they are.
+    (umask 022 && mkdir -p "$(dirname "$config_dir")" "$(dirname "$state_dir")" "$(dirname "$log_dir")")
     install_dir 0750 root @GROUP@ "$config_dir"
     install_dir 0750 root @GROUP@ "$config_dir/secrets"
     install_dir 0700 @USER@ @GROUP@ "$state_dir"

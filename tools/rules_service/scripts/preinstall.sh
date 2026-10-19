@@ -80,6 +80,14 @@ case $os in
             dscl . -create /Users/@USER@ Password '*'
             dscl . -create /Users/@USER@ IsHidden 1
         fi
+        # Earlier releases kept the state, and the account's home, under
+        # /Library/Application Support; move the home to the current state.
+        # dscl moves a value containing spaces to the next line.
+        home=$(dscl . -read /Users/@USER@ NFSHomeDirectory | sed '1s/^NFSHomeDirectory://' | tr -d '\n' | sed 's/^ *//')
+        if [ "$home" != "$state_dir" ]; then
+            dscl . -create /Users/@USER@ NFSHomeDirectory "$state_dir"
+            echo "@NAME@: home of @USER@ moved from $home to $state_dir; remove $home when no longer needed"
+        fi
         ;;
 esac
 
