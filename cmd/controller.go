@@ -222,9 +222,10 @@ func serve(ctx context.Context, cfg *Config, group *Group, host *slots, dirs *di
 	return nil
 }
 
-// ensureRunnerScaleSet finds or creates the group's scale set and brings its
-// labels in line with the configuration, so a label change takes effect on
-// the next session instead of requiring the scale set to be deleted.
+// ensureRunnerScaleSet finds or creates the group's scale set. The Actions
+// service fixes a scale set's labels at creation: an update returns success
+// but keeps the old labels. A scale set whose labels differ from the
+// configuration is therefore deleted and created again, with a new ID.
 func ensureRunnerScaleSet(ctx context.Context, client *scaleset.Client, runnerGroupID int, group *Group) (*scaleset.RunnerScaleSet, error) {
 	// Without configured labels, GitHub routes by the scale set name.
 	labels := []scaleset.Label{{Name: group.Name}}
@@ -234,19 +235,11 @@ func ensureRunnerScaleSet(ctx context.Context, client *scaleset.Client, runnerGr
 			labels = append(labels, scaleset.Label{Name: label})
 		}
 	}
-	desired := func() *scaleset.RunnerScaleSet {
-		return &scaleset.RunnerScaleSet{
+	create := func() (*scaleset.RunnerScaleSet, error) {
+		scaleSet, err := client.CreateRunnerScaleSet(ctx, &scaleset.RunnerScaleSet{
 			Name: group.Name, RunnerGroupID: runnerGroupID, Labels: slices.Clone(labels),
 			RunnerSetting: scaleset.RunnerSetting{DisableUpdate: true},
-		}
-	}
-
-	scaleSet, err := client.GetRunnerScaleSet(ctx, runnerGroupID, group.Name)
-	if err != nil {
-		return nil, fmt.Errorf("get scale set: %w", err)
-	}
-	if scaleSet == nil {
-		scaleSet, err = client.CreateRunnerScaleSet(ctx, desired())
+		})
 		if err == nil {
 			return scaleSet, nil
 		}
@@ -256,21 +249,36 @@ func ensureRunnerScaleSet(ctx context.Context, client *scaleset.Client, runnerGr
 		if lookupErr != nil || existing == nil {
 			return nil, fmt.Errorf("create scale set: %w", err)
 		}
-		scaleSet = existing
+		return existing, nil
+	}
+
+	scaleSet, err := client.GetRunnerScaleSet(ctx, runnerGroupID, group.Name)
+	if err != nil {
+		return nil, fmt.Errorf("get scale set: %w", err)
+	}
+	if scaleSet == nil {
+		return create()
 	}
 	if sameLabels(scaleSet.Labels, labels) {
 		return scaleSet, nil
 	}
-	updated, err := client.UpdateRunnerScaleSet(ctx, scaleSet.ID, desired())
-	if err != nil {
-		return nil, fmt.Errorf("update scale set labels: %w", err)
+	// Labels change only with the configuration, so this happens when hrc
+	// starts, before the group has runners. A failed creation is retried by the
+	// next session, which no longer finds the scale set.
+	slog.Info("Recreating runner scale set with the configured labels", "group", group.Name, "id", scaleSet.ID,
+		"labels", labelNames(scaleSet.Labels), "configured", labelNames(labels))
+	if err := client.DeleteRunnerScaleSet(ctx, scaleSet.ID); err != nil {
+		return nil, fmt.Errorf("delete scale set with outdated labels: %w", err)
 	}
+	return create()
+}
+
+func labelNames(labels []scaleset.Label) []string {
 	names := make([]string, 0, len(labels))
 	for _, label := range labels {
 		names = append(names, label.Name)
 	}
-	slog.Info("Updated runner scale set labels", "group", group.Name, "id", scaleSet.ID, "labels", names)
-	return updated, nil
+	return names
 }
 
 // sameLabels compares label names as sets: runs-on matching ignores order
