@@ -150,10 +150,12 @@ if (-not (Test-Path -LiteralPath $config)) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'hrc.json') -Destination $config
 }
 [xml] $xml = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'services/hrc.winsw.xml') -Raw
-$xml.service.executable = Join-Path $InstallRoot 'hrc.exe'
+# The XML adapter accepts only plain strings, not the PSObject-wrapped strings
+# that cmdlets such as Join-Path return in Windows PowerShell 5.1.
+$xml.service.executable = [string](Join-Path $InstallRoot 'hrc.exe')
 $xml.service.arguments = $xml.service.arguments.Replace('%SERVICE_CONFIG%', $config)
-$xml.service.workingdirectory = Join-Path $DataRoot 'state'
-$xml.service.logpath = Join-Path $DataRoot 'logs'
+$xml.service.workingdirectory = [string](Join-Path $DataRoot 'state')
+$xml.service.logpath = [string](Join-Path $DataRoot 'logs')
 $xml.Save((Join-Path $InstallRoot 'hrc-service.xml'))
 if (-not $Staging -and -not $service) { Invoke-Wrapper 'install' }
 Write-Output "hrc: installed; configure $config, then run: Start-Service hrc"
