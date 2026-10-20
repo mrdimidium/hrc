@@ -19,6 +19,27 @@ actions_runner(
     path = "runner/runner",
 )
 
+node = use_extension("//runner:runner.bzl", "node_repositories")
+
+[
+    use_repo(
+        node,
+        version + "_win_" + arch + "_exe",
+        version + "_win_" + arch + "_lib",
+        version + "_darwin_" + arch,
+        version + "_linux_musl_" + arch,
+        version + "_linux_glibc_" + arch,
+    )
+    for version in [
+        "node20",
+        "node24",
+    ]
+    for arch in [
+        "x64",
+        "arm64",
+    ]
+]
+
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.27.2")
 
