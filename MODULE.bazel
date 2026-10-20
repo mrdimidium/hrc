@@ -24,8 +24,7 @@ node = use_extension("//runner:runner.bzl", "node_repositories")
 [
     use_repo(
         node,
-        version + "_win_" + arch + "_exe",
-        version + "_win_" + arch + "_lib",
+        version + "_win_" + arch,
         version + "_darwin_" + arch,
         version + "_linux_musl_" + arch,
         version + "_linux_glibc_" + arch,

@@ -291,7 +291,7 @@
   "moduleExtensions": {
     "//runner:runner.bzl%node_repositories": {
       "general": {
-        "bzlTransitiveDigest": "DdJUBqypXBv6j+0BcNF+jew1n1usNtMaieqOMqgesqk=",
+        "bzlTransitiveDigest": "vyaWkIpNjy2Qr8zvTkplySMP/38JvpENlB1t6Esa8Ng=",
         "usagesDigest": "4FMoAQ1leTW2w/ICIdvYiE5sMooEShxMPaasJcP/aSk=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
@@ -309,7 +309,7 @@
               ],
               "sha256": "466e05f3477c20dfb723054dfebffe55bc74660ee77f612166fca121dacb65b6",
               "strip_prefix": "node-v20.20.2-darwin-arm64",
-              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = glob([\"**\"], exclude = [\"BUILD.bazel\", \"WORKSPACE\", \"WORKSPACE.bazel\", \"MODULE.bazel\", \"bin/corepack\", \"bin/npm\", \"bin/npx\"]),\n    visibility = [\"//visibility:public\"],\n)\n"
+              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = [\"bin/node\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
           "node20_darwin_x64": {
@@ -320,7 +320,7 @@
               ],
               "sha256": "8be6f5e4bb128c82774f8a0b8d7a1cc1365a7977d9657cece0ca647b3fe04e61",
               "strip_prefix": "node-v20.20.2-darwin-x64",
-              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = glob([\"**\"], exclude = [\"BUILD.bazel\", \"WORKSPACE\", \"WORKSPACE.bazel\", \"MODULE.bazel\", \"bin/corepack\", \"bin/npm\", \"bin/npx\"]),\n    visibility = [\"//visibility:public\"],\n)\n"
+              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = [\"bin/node\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
           "node20_linux_glibc_arm64": {
@@ -331,7 +331,7 @@
               ],
               "sha256": "47ef73d543ecf6eb19435f6c03a0ac4809b3bf0dd6b26c7c571efc2a6572a74d",
               "strip_prefix": "node-v20.20.2-linux-arm64",
-              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = glob([\"**\"], exclude = [\"BUILD.bazel\", \"WORKSPACE\", \"WORKSPACE.bazel\", \"MODULE.bazel\", \"bin/corepack\", \"bin/npm\", \"bin/npx\"]),\n    visibility = [\"//visibility:public\"],\n)\n"
+              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = [\"bin/node\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
           "node20_linux_glibc_x64": {
@@ -342,7 +342,7 @@
               ],
               "sha256": "19e56f0825510207dd904f087fe52faa0a4eb6b2aab5f0ea7a33830d04888b8b",
               "strip_prefix": "node-v20.20.2-linux-x64",
-              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = glob([\"**\"], exclude = [\"BUILD.bazel\", \"WORKSPACE\", \"WORKSPACE.bazel\", \"MODULE.bazel\", \"bin/corepack\", \"bin/npm\", \"bin/npx\"]),\n    visibility = [\"//visibility:public\"],\n)\n"
+              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = [\"bin/node\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
           "node20_linux_musl_arm64": {
@@ -353,7 +353,7 @@
               ],
               "sha256": "7549872a8d1be4670d5219f39dc0aed6e6432c976f3cd25543bc249aa850f041",
               "strip_prefix": "node-v20.20.2-linux-arm64-musl",
-              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = glob([\"**\"], exclude = [\"BUILD.bazel\", \"WORKSPACE\", \"WORKSPACE.bazel\", \"MODULE.bazel\", \"bin/corepack\", \"bin/npm\", \"bin/npx\"]),\n    visibility = [\"//visibility:public\"],\n)\n"
+              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = [\"bin/node\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
           "node20_linux_musl_x64": {
@@ -364,47 +364,29 @@
               ],
               "sha256": "f21a2253025a5d1a14332a0b1ed48871689c5ca9aa37a6141428944b75de7d91",
               "strip_prefix": "",
-              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = glob([\"**\"], exclude = [\"BUILD.bazel\", \"WORKSPACE\", \"WORKSPACE.bazel\", \"MODULE.bazel\", \"bin/corepack\", \"bin/npm\", \"bin/npx\"]),\n    visibility = [\"//visibility:public\"],\n)\n"
+              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = [\"bin/node\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
-          "node20_win_arm64_exe": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+          "node20_win_arm64": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
               "urls": [
-                "https://nodejs.org/dist/v20.20.2/win-arm64/node.exe"
+                "https://nodejs.org/dist/v20.20.2/node-v20.20.2-win-arm64.zip"
               ],
-              "sha256": "a6c4adc2ea22256b5d2df57a981f1538d56d44fc845646a8bdbf66740ac1e948",
-              "downloaded_file_path": "bin/node.exe"
+              "sha256": "d5c5b1d56f7f9469830eb1f57efeec0a6a9078c0a9e88cd5b4b4b48f46c22069",
+              "strip_prefix": "node-v20.20.2-win-arm64",
+              "build_file_content": "exports_files([\"node.exe\"])\nfilegroup(\n    name = \"files\",\n    srcs = [\"node.exe\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
-          "node20_win_arm64_lib": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+          "node20_win_x64": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
               "urls": [
-                "https://nodejs.org/dist/v20.20.2/win-arm64/node.lib"
+                "https://nodejs.org/dist/v20.20.2/node-v20.20.2-win-x64.zip"
               ],
-              "sha256": "deacf784c804e5ab9df886b2de4c7a04d77ee1c722e2e4f1567aac62391ec4c4",
-              "downloaded_file_path": "bin/node.lib"
-            }
-          },
-          "node20_win_x64_exe": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
-            "attributes": {
-              "urls": [
-                "https://nodejs.org/dist/v20.20.2/win-x64/node.exe"
-              ],
-              "sha256": "56c1520ee33b801e8bdb92fb321cf2e98529735b6d12bd4a2a6dec0ac0bab937",
-              "downloaded_file_path": "bin/node.exe"
-            }
-          },
-          "node20_win_x64_lib": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
-            "attributes": {
-              "urls": [
-                "https://nodejs.org/dist/v20.20.2/win-x64/node.lib"
-              ],
-              "sha256": "c4a794e993d9304238523230885e9ec00ca052c73b9558471858eef14916d91f",
-              "downloaded_file_path": "bin/node.lib"
+              "sha256": "dc3700fdd57a63eedb8fd7e3c7baaa32e6a740a1b904167ff4204bc68ed8bf77",
+              "strip_prefix": "node-v20.20.2-win-x64",
+              "build_file_content": "exports_files([\"node.exe\"])\nfilegroup(\n    name = \"files\",\n    srcs = [\"node.exe\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
           "node24_darwin_arm64": {
@@ -415,7 +397,7 @@
               ],
               "sha256": "bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057",
               "strip_prefix": "node-v24.21.0-darwin-arm64",
-              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = glob([\"**\"], exclude = [\"BUILD.bazel\", \"WORKSPACE\", \"WORKSPACE.bazel\", \"MODULE.bazel\", \"bin/corepack\", \"bin/npm\", \"bin/npx\"]),\n    visibility = [\"//visibility:public\"],\n)\n"
+              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = [\"bin/node\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
           "node24_darwin_x64": {
@@ -426,7 +408,7 @@
               ],
               "sha256": "1462cb3b3046b815cf8ea436d3da450ec1a9f11dac7e5a46b0ada5305d7e8097",
               "strip_prefix": "node-v24.21.0-darwin-x64",
-              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = glob([\"**\"], exclude = [\"BUILD.bazel\", \"WORKSPACE\", \"WORKSPACE.bazel\", \"MODULE.bazel\", \"bin/corepack\", \"bin/npm\", \"bin/npx\"]),\n    visibility = [\"//visibility:public\"],\n)\n"
+              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = [\"bin/node\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
           "node24_linux_glibc_arm64": {
@@ -437,7 +419,7 @@
               ],
               "sha256": "724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5",
               "strip_prefix": "node-v24.21.0-linux-arm64",
-              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = glob([\"**\"], exclude = [\"BUILD.bazel\", \"WORKSPACE\", \"WORKSPACE.bazel\", \"MODULE.bazel\", \"bin/corepack\", \"bin/npm\", \"bin/npx\"]),\n    visibility = [\"//visibility:public\"],\n)\n"
+              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = [\"bin/node\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
           "node24_linux_glibc_x64": {
@@ -448,7 +430,7 @@
               ],
               "sha256": "6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff",
               "strip_prefix": "node-v24.21.0-linux-x64",
-              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = glob([\"**\"], exclude = [\"BUILD.bazel\", \"WORKSPACE\", \"WORKSPACE.bazel\", \"MODULE.bazel\", \"bin/corepack\", \"bin/npm\", \"bin/npx\"]),\n    visibility = [\"//visibility:public\"],\n)\n"
+              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = [\"bin/node\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
           "node24_linux_musl_arm64": {
@@ -459,7 +441,7 @@
               ],
               "sha256": "3048b0811e158ca0d8672b59c839861763e144492980d8d29b369dfee45747e4",
               "strip_prefix": "node-v24.21.0-linux-arm64-musl",
-              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = glob([\"**\"], exclude = [\"BUILD.bazel\", \"WORKSPACE\", \"WORKSPACE.bazel\", \"MODULE.bazel\", \"bin/corepack\", \"bin/npm\", \"bin/npx\"]),\n    visibility = [\"//visibility:public\"],\n)\n"
+              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = [\"bin/node\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
           "node24_linux_musl_x64": {
@@ -470,47 +452,29 @@
               ],
               "sha256": "2a4a9c6af9b6f1dd67e4c460474a6fbb64fafffe49e1166af80715bfd4e50775",
               "strip_prefix": "",
-              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = glob([\"**\"], exclude = [\"BUILD.bazel\", \"WORKSPACE\", \"WORKSPACE.bazel\", \"MODULE.bazel\", \"bin/corepack\", \"bin/npm\", \"bin/npx\"]),\n    visibility = [\"//visibility:public\"],\n)\n"
+              "build_file_content": "filegroup(\n    name = \"files\",\n    srcs = [\"bin/node\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
-          "node24_win_arm64_exe": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+          "node24_win_arm64": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
               "urls": [
-                "https://nodejs.org/dist/v24.21.0/win-arm64/node.exe"
+                "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-arm64.zip"
               ],
-              "sha256": "dff59da18b6ffe1bf1ca99e1d2af4906080c481740619f5b5098c0fca28bd9b7",
-              "downloaded_file_path": "bin/node.exe"
+              "sha256": "8779b1bde1d39f8d420e3b57aa657b39891af434d3de44a919044cec06785921",
+              "strip_prefix": "node-v24.21.0-win-arm64",
+              "build_file_content": "exports_files([\"node.exe\"])\nfilegroup(\n    name = \"files\",\n    srcs = [\"node.exe\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           },
-          "node24_win_arm64_lib": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+          "node24_win_x64": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
               "urls": [
-                "https://nodejs.org/dist/v24.21.0/win-arm64/node.lib"
+                "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip"
               ],
-              "sha256": "2c0c3215d59c09d7c136da4949696dae121a299e9bdfc64cd9130a58610af63d",
-              "downloaded_file_path": "bin/node.lib"
-            }
-          },
-          "node24_win_x64_exe": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
-            "attributes": {
-              "urls": [
-                "https://nodejs.org/dist/v24.21.0/win-x64/node.exe"
-              ],
-              "sha256": "ba4e6d110e8c1592a1ecd390f6b05f3da124b13871a5be62b341a07a853c6c32",
-              "downloaded_file_path": "bin/node.exe"
-            }
-          },
-          "node24_win_x64_lib": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
-            "attributes": {
-              "urls": [
-                "https://nodejs.org/dist/v24.21.0/win-x64/node.lib"
-              ],
-              "sha256": "a0a84aa03917b578d286010b7521837e9ff1136ffb2e4a406c14316c33fd06f7",
-              "downloaded_file_path": "bin/node.lib"
+              "sha256": "158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541",
+              "strip_prefix": "node-v24.21.0-win-x64",
+              "build_file_content": "exports_files([\"node.exe\"])\nfilegroup(\n    name = \"files\",\n    srcs = [\"node.exe\", \"LICENSE\"],\n    visibility = [\"//visibility:public\"],\n)\n"
             }
           }
         }
