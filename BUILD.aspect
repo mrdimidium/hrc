@@ -46,6 +46,27 @@ def _ci_check(ctx):
 def _gh(ctx, argv):
     _exec(ctx, ["gh"] + argv)
 
+def _notes(ctx, repository, tag, section, required = False):
+    """Return the CHANGELOG.md section, then GitHub's link to the commits since the previous release."""
+    heading = "## [%s]" % section
+    lines = None
+    for line in ctx.std.fs.read_to_string("CHANGELOG.md").split("\n"):
+        if lines == None:
+            if line.startswith(heading):
+                lines = []
+        elif line.startswith("## ") or (line.startswith("[") and "]: " in line):
+            break
+        else:
+            lines.append(line)
+    changes = "\n".join(lines or []).strip()
+    if required and not changes:
+        fail("CHANGELOG.md has no notes under " + heading)
+    generated = _capture(ctx, ["gh", "api", "--method", "POST", "repos/" + repository + "/releases/generate-notes", "-f", "tag_name=" + tag, "--jq", ".body"])
+    if not generated.status.success:
+        fail("Could not generate release notes for " + tag)
+    commits = [line for line in generated.stdout.strip().split("\n") if line.startswith("**Full Changelog**")]
+    return "\n\n".join([part for part in [changes] + commits[:1] if part])
+
 def _view(ctx, tag):
     return _capture(ctx, ["gh", "release", "view", tag, "--json", "isDraft,assets"])
 
@@ -73,6 +94,9 @@ def _ci_release(ctx):
         else:
             _gh(ctx, ["api", "--method", "POST", "repos/" + repository + "/git/refs", "-f", "ref=refs/tags/" + tag, "-f", "sha=" + commit])
         notes = "Development build %s from commit %s." % (version, commit)
+        changes = _notes(ctx, repository, tag, "Unreleased")
+        if changes:
+            notes += "\n\n" + changes
         if _view(ctx, tag).status.success:
             _gh(ctx, ["release", "edit", tag, "--title", tag, "--notes", notes, "--prerelease", "--latest=false"])
         else:
@@ -81,12 +105,13 @@ def _ci_release(ctx):
         if ref != "refs/tags/release-" + version:
             fail("Release ref does not match version: " + ref)
         tag = ref[len("refs/tags/"):]
+        notes = _notes(ctx, repository, tag, version, required = True)
         existing = _view(ctx, tag)
         if existing.status.success:
             if not json.decode(existing.stdout)["isDraft"]:
                 fail("Release %s is already published; refusing to overwrite it." % tag)
         else:
-            _gh(ctx, ["release", "create", tag, "--verify-tag", "--draft", "--title", version, "--generate-notes"])
+            _gh(ctx, ["release", "create", tag, "--verify-tag", "--draft", "--title", version, "--notes", notes])
     published = names + ["SHASUMS256.txt"]
     _gh(ctx, ["release", "upload", tag] + [directory + "/" + name for name in published] + ["--clobber"])
     if tag == "dev":
@@ -95,7 +120,7 @@ def _ci_release(ctx):
             if asset["name"] not in published:
                 _gh(ctx, ["release", "delete-asset", tag, asset["name"], "--yes"])
     else:
-        _gh(ctx, ["release", "edit", tag, "--draft=false"])
+        _gh(ctx, ["release", "edit", tag, "--draft=false", "--notes", notes])
     return 0
 
 # buildifier: disable=unused-variable
