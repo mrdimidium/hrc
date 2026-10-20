@@ -26,6 +26,7 @@ test_suite(
     tests = [
         "//cmd:cmd_test",
         "//pkg/listener:listener_test",
+        "//pkg/process:process_test",
         "//pkg/worker:worker_test",
     ],
 )
@@ -40,6 +41,7 @@ filegroup(
     ] + [
         "//cmd:BUILD.bazel",
         "//pkg/listener:BUILD.bazel",
+        "//pkg/process:BUILD.bazel",
         "//pkg/worker:BUILD.bazel",
         "//runner:starlark_sources",
         "//tools:starlark_sources",

@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+exports_files(["BUILD.bazel"])
+
+go_library(
+    name = "process",
+    srcs = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ),
+    importpath = "gilti.dev/hrc/pkg/process",
+    visibility = ["//visibility:public"],
+    deps = select({
+        "@platforms//os:windows": ["@org_golang_x_sys//windows"],
+        "//conditions:default": [],
+    }),
+)
+
+go_test(
+    name = "process_test",
+    size = "small",
+    srcs = glob(["*_test.go"]),
+    embed = [":process"],
+    deps = select({
+        "@platforms//os:windows": ["@org_golang_x_sys//windows"],
+        "//conditions:default": [],
+    }),
+)

@@ -106,7 +106,7 @@ func (c *Config) validate() error {
 }
 
 // renderRunner translates runtime values into .NET's RunnerSettings document.
-func (c Config) renderRunner() ([]byte, error) {
+func (c *Config) renderRunner() ([]byte, error) {
 	return json.Marshal(struct {
 		AgentID              uint64 `json:"agentId,omitempty"`
 		AgentName            string `json:"agentName"`

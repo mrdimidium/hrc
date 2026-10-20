@@ -13,10 +13,7 @@ go_library(
     ),
     importpath = "gilti.dev/hrc/pkg/worker",
     visibility = ["//visibility:public"],
-    deps = select({
-        "@platforms//os:windows": ["@org_golang_x_sys//windows"],
-        "//conditions:default": [],
-    }),
+    deps = ["//pkg/process"],
 )
 
 go_test(
@@ -24,8 +21,4 @@ go_test(
     size = "small",
     srcs = glob(["*_test.go"]),
     embed = [":worker"],
-    deps = select({
-        "@platforms//os:windows": ["@org_golang_x_sys//windows"],
-        "//conditions:default": [],
-    }),
 )

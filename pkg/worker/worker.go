@@ -9,16 +9,20 @@ package worker
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
+
+	"gilti.dev/hrc/pkg/process"
 )
 
 // Result uses the upstream TaskResult values. Unknown means the process never
@@ -64,6 +68,15 @@ var (
 	ErrClosed         = errors.New("worker is closed")
 )
 
+type messageType int32
+
+const (
+	messageNewJob     messageType = 1
+	messageCancel     messageType = 2
+	messageShutdown   messageType = 3
+	messageOSShutdown messageType = 4
+)
+
 // ExitError reports an exit outside the .NET TaskResult range (100 through 105).
 type ExitError struct{ Code int }
 
@@ -82,11 +95,9 @@ type Worker struct {
 	processStarted bool
 	running        bool
 	closed         bool
-	exited         bool // The process exited on its own, rather than being killed.
 
 	startCancel context.CancelFunc
-	cmd         *exec.Cmd
-	platform    workerPlatform
+	process     *process.Process
 	done        chan struct{}
 	result      Result
 	err         error
@@ -108,7 +119,13 @@ func New(config Config) (*Worker, error) {
 	if err := config.validate(); err != nil {
 		return nil, err
 	}
-	w := &Worker{config: config, done: make(chan struct{}), writes: make(chan struct{}, 1), result: Unknown}
+
+	w := &Worker{
+		config: config,
+		done:   make(chan struct{}),
+		writes: make(chan struct{}, 1),
+		result: Unknown,
+	}
 	w.writes <- struct{}{}
 	return w, nil
 }
@@ -143,7 +160,7 @@ func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage) (err err
 		if err != nil {
 			if processStarted {
 				err = errors.Join(err, w.kill())
-				w.waitErr = w.waitProcess()
+				_, w.waitErr = w.process.Wait()
 				err = errors.Join(err, w.waitErr)
 			}
 			err = w.finish(Unknown, err)
@@ -173,67 +190,46 @@ func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage) (err err
 	w.running = true
 	w.mu.Unlock()
 	go func() {
-		w.waitErr = w.waitProcess()
-		result, exitErr := Unknown, w.waitErr
-		if w.cmd.ProcessState != nil {
-			code := w.cmd.ProcessState.ExitCode()
+		state, waitErr := w.process.Wait()
+		w.waitErr = waitErr
+		result, exitErr := Unknown, waitErr
+		if state != nil {
+			code := state.ExitCode()
 			if code >= 100 && code <= 105 {
 				result = Result(code - 100)
 			} else if exitErr == nil {
 				exitErr = &ExitError{Code: code}
 			}
 		}
-		w.mu.Lock()
-		w.exited = true
-		w.mu.Unlock()
 		w.finish(result, exitErr)
 	}()
 	return nil
 }
 
 func (w *Worker) startProcess(env []string) error {
-	read, write, err := os.Pipe()
+	read, write, err := process.Pipe()
 	if err != nil {
 		return err
 	}
 	w.pipes = append(w.pipes, read, write)
-	backRead, backWrite, err := os.Pipe()
+	backRead, backWrite, err := process.Pipe()
 	if err != nil {
 		return err
 	}
 	w.pipes = append(w.pipes, backRead, backWrite)
 	w.input = write
-	w.cmd = exec.Command(filepath.Join(w.config.Dir, "bin", binaryName()))
-	w.cmd.Dir = filepath.Join(w.config.Dir, "bin")
-	w.cmd.Env, w.cmd.Stdout, w.cmd.Stderr = env, w.config.Stdout, w.config.Stderr
-	w.cmd.WaitDelay = 5 * time.Second
-	if err := w.configurePlatform(); err != nil {
-		return fmt.Errorf("configure process: %w", err)
-	}
-	if err := w.cmd.Start(); err != nil {
+	bin := filepath.Join(w.config.Dir, "bin")
+	w.process, err = process.Start(process.Config{
+		Path: filepath.Join(bin, binaryName()), Dir: bin, Args: []string{"spawnclient"},
+		Env: env, Stdout: w.config.Stdout, Stderr: w.config.Stderr,
+		Files: []*os.File{read, backWrite}, KeepDescendants: w.config.KeepDescendants,
+	})
+	if err != nil {
 		return err
 	}
-	// Attach to the platform's process group/job before delivering a job, so
-	// descendants cannot escape during the first step's startup.
-	if err := w.startedPlatform(); err != nil {
-		killErr := w.killProcessTree()
-		w.closePipes()
-		waitErr := w.waitProcess()
-		return errors.Join(fmt.Errorf("attach process: %w", err), killErr, waitErr)
-	}
-	w.pipes[0].Close()
-	w.pipes[3].Close()
+	read.Close()
+	backWrite.Close()
 	return nil
-}
-
-// waitProcess is called once, by either failed startup or the completion goroutine.
-func (w *Worker) waitProcess() error {
-	err := w.cmd.Wait()
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return nil // TaskResult is encoded in the exit status, including success.
-	}
-	return err
 }
 
 // CancelJob sends ordinary job cancellation. It does not wait for completion;
@@ -293,7 +289,7 @@ func (w *Worker) kill() error {
 			return
 		default:
 		}
-		w.killErr = w.killProcessTree()
+		w.killErr = w.process.Kill()
 	})
 	return w.killErr
 }
@@ -324,17 +320,13 @@ func (w *Worker) Close() error {
 
 func (w *Worker) finish(result Result, err error) error {
 	// The worker can exit before its descendants. Clean up the process tree
-	// before publishing Done, even when Close has not been called yet, unless
-	// the caller keeps the descendants of a process that exited on its own.
-	w.mu.Lock()
-	keep := w.exited && w.keepDescendants()
-	w.mu.Unlock()
-	if w.cmd != nil && w.cmd.Process != nil && !keep {
-		err = errors.Join(err, w.kill())
+	// before publishing Done, even when Close has not been called yet.
+	var processErr error
+	if w.process != nil {
+		processErr = w.process.Close()
 	}
 	w.closePipes()
-	w.closePlatform()
-	w.cleanupErr = errors.Join(w.pipeErr, w.removeConfigFiles())
+	w.cleanupErr = errors.Join(processErr, w.pipeErr, w.removeConfigFiles())
 	w.result, w.err = result, errors.Join(err, w.cleanupErr)
 	close(w.done)
 	return w.err
@@ -444,6 +436,23 @@ func (w *Worker) writeMessage(ctx context.Context, kind messageType, body []byte
 		<-done
 		return ctx.Err()
 	}
+}
+
+// The frame is Int32(type), Int32(byte length), UTF-16LE JSON without a BOM.
+// It is not a JSON stream and must not share stdout/stderr with diagnostics.
+func writeFrame(dst io.Writer, kind messageType, body []byte) error {
+	text := utf16.Encode([]rune(string(body)))
+	if len(text) > 25_000_000 {
+		return errors.New("Worker frame exceeds 50 MB")
+	}
+	data := make([]byte, 8+2*len(text))
+	binary.LittleEndian.PutUint32(data, uint32(kind))
+	binary.LittleEndian.PutUint32(data[4:], uint32(2*len(text)))
+	for i, value := range text {
+		binary.LittleEndian.PutUint16(data[8+i*2:], value)
+	}
+	_, err := io.Copy(dst, bytes.NewReader(data))
+	return err
 }
 
 func (w *Worker) closePipes() {
