@@ -83,7 +83,6 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run --no-project --python 3.13 python -m unittest discover -s runner -p '*_test.py'
           bazel test //:tests --nostamp --workspace_status_command= --test_output=errors
 
       - name: Attest build archives

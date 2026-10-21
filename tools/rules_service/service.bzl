@@ -4,7 +4,8 @@
 """Package a service binary, generated service definitions and explicit dependencies.
 
 service() produces a tar.gz archive. Source dependencies keep their package-relative
-paths; generated files and directory trees use their basenames. Only declared
+paths; generated files and directory trees use their basenames. rules_pkg mappings
+retain their explicit destinations and attributes. Only declared
 outputs of deps are included, never their transitive build inputs or runfiles.
 
 Unix archives contain four standalone package hooks with helpers inlined at build
@@ -62,6 +63,7 @@ def _service_files_impl(ctx):
     for kind, filename in [("systemd", name + ".systemd"), ("openrc", name + ".alpine"), ("launchd", "org." + name + ".plist"), ("winsw", name + ".winsw.xml")]:
         macos = kind == "launchd"
         config = (prefix + "/etc/" if macos else "/etc/") + name + "/" + name + ".json"
+
         # The GitHub runner passes script paths to the shell unquoted, so job
         # directories, and with them the state, must not contain spaces.
         state = (prefix + "/var/" if macos else "/var/lib/") + name

@@ -1,42 +1,255 @@
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
 # SPDX-License-Identifier: BSD-3-Clause
 
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//tools:platforms.bzl", "ARCH", "OS")
-load(":runner.bzl", "node_externals", "runner_layout")
+load("@bazel_skylib//rules:select_file.bzl", "select_file")
+load("@rules_dotnet//dotnet:defs.bzl", "csharp_binary", "csharp_library", "publish_binary")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_filegroup", "pkg_files", "strip_prefix")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@worker_restore//:projects.bzl", "PACKAGES", "PROJECTS")
 
 exports_files([
-    "build.py",
-    "runner.BUILD.bazel",
+    "restore.py",
+    "rules_dotnet.patch",
 ])
 
 filegroup(
     name = "starlark_sources",
     srcs = [
         "BUILD.bazel",
-        "runner.BUILD.bazel",
-        "runner.bzl",
+        "nuget.bzl",
     ],
     visibility = ["//visibility:public"],
 )
 
-runner_layout(
-    name = "runner",
-    srcs = ["@actions_runner//:sources"],
-    dev = "@actions_runner//:src/dev.sh",
-    os = OS,
-    arch = ARCH,
-    tags = ["manual"],
+NODE_PLATFORMS = {
+    os + "_" + arch: (os, arch)
+    for os in [
+        "linux",
+        "darwin",
+        "win",
+    ]
+    for arch in [
+        "x64",
+        "arm64",
+    ]
+}
+
+[
+    config_setting(
+        name = "externals_files_" + platform,
+        constraint_values = [
+            "@platforms//os:" + {
+                "darwin": "osx",
+                "linux": "linux",
+                "win": "windows",
+            }[os],
+            "@platforms//cpu:" + {
+                "arm64": "aarch64",
+                "x64": "x86_64",
+            }[arch],
+        ],
+    )
+    for platform, (os, arch) in NODE_PLATFORMS.items()
+]
+
+NODE_DISTRIBUTIONS = [
+    (
+        "node" + major + "_" + platform + variant,
+        platform,
+        "@node" + major + "_" + (("linux_musl" if variant else "linux_glibc") if os == "linux" else os) + "_" + arch,
+        "runner/externals/node" + major + variant,
+    )
+    for platform, (os, arch) in NODE_PLATFORMS.items()
+    for major in [
+        "20",
+        "24",
+    ]
+    for variant in ([
+        "",
+        "_alpine",
+    ] if os == "linux" else [""])
+]
+
+[
+    [
+        select_file(
+            name = "externals_files_" + target + "_license",
+            srcs = repo + "//:npm_files",
+            subpath = "bin/nodejs/LICENSE",
+        ),
+        pkg_files(
+            name = "externals_files_" + target,
+            srcs = [
+                repo + "//:node_bin",
+                ":externals_files_" + target + "_license",
+            ],
+            prefix = prefix,
+            strip_prefix = strip_prefix.from_root("bin/nodejs"),
+            renames = {repo + "//:node_bin": "bin/node.exe"} if platform.startswith("win_") else {},
+            attributes = pkg_attributes(mode = "0755"),
+        ),
+    ]
+    for target, platform, repo, prefix in NODE_DISTRIBUTIONS
+]
+
+pkg_filegroup(
+    name = "externals_files",
+    srcs = select({
+        ":externals_files_" + platform: [
+            ":externals_files_" + target
+            for target, target_platform, _, _ in NODE_DISTRIBUTIONS
+            if target_platform == platform
+        ]
+        for platform in NODE_PLATFORMS
+    }),
     visibility = ["//visibility:public"],
 )
 
-node_externals(name = "externals_files")
+RESOURCES = {
+    "src/Runner.Worker/action_yaml.json": "GitHub.Runner.Worker.action_yaml.json",
+    "src/Sdk/DTPipelines/workflow-v1.0.json": "GitHub.DistributedTask.Pipelines.ObjectTemplating.workflow-v1.0.json",
+    "src/Sdk/Expressions/Resources/ExpressionResources.resx": "GitHub.Actions.Expressions.ExpressionResources.resources",
+    "src/Sdk/WorkflowParser/ObjectTemplating/TemplateStrings.resx": "GitHub.Actions.WorkflowParser.ObjectTemplating.TemplateStrings.resources",
+    "src/Sdk/WorkflowParser/WorkflowStrings.resx": "GitHub.Actions.WorkflowParser.WorkflowStrings.resources",
+    "src/Sdk/WorkflowParser/workflow-v1.0.json": "GitHub.Actions.WorkflowParser.workflow-v1.0.json",
+}
 
-pkg_tar(
-    name = "externals",
-    srcs = [":externals_files"],
-    extension = "tar.gz",
-    mode = "",
-    stamp = 0,
+RID = select({
+    "@platforms//os:linux": "linux",
+    "@platforms//os:osx": "osx",
+    "@platforms//os:windows": "win",
+}) + "-" + select({
+    "@platforms//cpu:aarch64": "arm64",
+    "@platforms//cpu:x86_64": "x64",
+})
+
+DEFINES = ["TRACE"] + select({
+    "@platforms//os:linux": ["OS_LINUX"],
+    "@platforms//os:osx": ["OS_OSX"],
+    "@platforms//os:windows": ["OS_WINDOWS"],
+}) + select({
+    "@platforms//cpu:aarch64": ["ARM64"],
+    "@platforms//cpu:x86_64": ["X64"],
+})
+
+PROJECT_RESOURCES = {
+    project: [name for path, name in RESOURCES.items() if path.startswith("src/" + project + "/")]
+    for project in PROJECTS
+}
+
+py_binary(
+    name = "build_inputs_tool",
+    srcs = ["build_inputs.py"],
+    main = "build_inputs.py",
+)
+
+genrule(
+    name = "worker_inputs",
+    srcs = ["runner/src/runnerversion"] + ["runner/" + path for path in RESOURCES],
+    outs = [
+        "inputs/AssemblyInfo.cs",
+        "inputs/BuildConstants.cs",
+    ] + ["inputs/" + name for name in RESOURCES.values()],
+    cmd = '"$(execpath :build_inputs_tool)" "$(DOTNET_BIN)" "$(execpath runner/src/runnerversion)" ' + RID +
+          ' "$(execpath inputs/BuildConstants.cs)" "$(execpath inputs/AssemblyInfo.cs)"' +
+          "".join([' "$(execpath runner/%s)" "$(execpath inputs/%s)"' % (path, name) for path, name in RESOURCES.items()]),
+    toolchains = ["@rules_dotnet//dotnet:resolved_toolchain"],
+    tools = [
+        ":build_inputs_tool",
+        "@rules_dotnet//dotnet:resolved_toolchain",
+    ],
+)
+
+[
+    (csharp_binary if project == "Runner.Worker" else csharp_library)(
+        name = project,
+        srcs = glob(
+            ["runner/src/" + project + "/**/*.cs"],
+            exclude = [
+                "runner/src/**/bin/**",
+                "runner/src/**/obj/**",
+                "runner/src/Runner.Sdk/BuildConstants.cs",
+            ],
+        ) + [":inputs/AssemblyInfo.cs"] + ([":inputs/BuildConstants.cs"] if project == "Runner.Sdk" else []),
+        deps = ["@worker_nuget//" + package for package in PACKAGES[project]] + [":" + dependency for dependency in PROJECTS[project]],
+        compile_data = [":inputs/" + name for name in PROJECT_RESOURCES[project]],
+        compiler_options = ["/resource:$(execpath :inputs/%s),%s" % (name, name) for name in PROJECT_RESOURCES[project]],
+        defines = ["TRACE"] if project == "Sdk" else DEFINES,
+        out = project,
+        target_frameworks = ["net8.0"],
+        allow_unsafe_blocks = project == "Sdk",
+        generate_documentation_file = False,
+        langversion = "11.0" if project == "Sdk" else "12.0",
+        nowarn = [
+            "CS1701",
+            "CS1702",
+            "SYSLIB0050",
+            "SYSLIB0051",
+        ],
+        treat_warnings_as_errors = True,
+    )
+    for project in PROJECTS
+]
+
+publish_binary(
+    name = "worker",
+    binary = ":Runner.Worker",
+    target_framework = "net8.0",
+    self_contained = True,
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "worker_files",
+    srcs = [":worker"],
+    prefix = "runner/bin",
+    strip_prefix = select({
+        ":externals_files_" + os + "_" + arch: strip_prefix.from_pkg("worker/publish/" + {
+            "darwin": "osx",
+            "linux": "linux",
+            "win": "win",
+        }[os] + "-" + arch)
+        for os in [
+            "linux",
+            "darwin",
+            "win",
+        ]
+        for arch in [
+            "x64",
+            "arm64",
+        ]
+    }),
+    attributes = pkg_attributes(mode = "0755"),
+)
+
+pkg_files(
+    name = "worker_scripts",
+    srcs = [
+        "runner/src/Misc/layoutbin/hashFiles/index.js",
+        "runner/src/Misc/layoutbin/macos-run-invoker.js",
+    ],
+    prefix = "runner/bin",
+    strip_prefix = strip_prefix.from_pkg("runner/src/Misc/layoutbin"),
+)
+
+pkg_files(
+    name = "worker_metadata",
+    srcs = [
+        "runner/LICENSE",
+        "runner/src/runnerversion",
+    ],
+    prefix = "runner",
+    strip_prefix = strip_prefix.files_only(),
+    renames = {"runner/src/runnerversion": "VERSION"},
+)
+
+pkg_filegroup(
+    name = "runner",
+    srcs = [
+        ":externals_files",
+        ":worker_files",
+        ":worker_metadata",
+        ":worker_scripts",
+    ],
     visibility = ["//visibility:public"],
 )

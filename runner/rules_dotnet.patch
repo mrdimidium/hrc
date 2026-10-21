@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+diff --git a/dotnet/private/rules/csharp/binary.bzl b/dotnet/private/rules/csharp/binary.bzl
+--- a/dotnet/private/rules/csharp/binary.bzl
++++ b/dotnet/private/rules/csharp/binary.bzl
+@@ -55,7 +55,7 @@ def _compile_action(ctx, tfm):
+         is_analyzer = False,
+         is_language_specific_analyzer = False,
+         analyzer_configs = ctx.files.analyzer_configs,
+-        compiler_options = ctx.attr.compiler_options,
++        compiler_options = [ctx.expand_location(option, targets = ctx.attr.compile_data) for option in ctx.attr.compiler_options],
+         interceptors_namespaces = ctx.attr.interceptors_namespaces,
+         is_windows = ctx.target_platform_has_constraint(ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]),
+     )
+diff --git a/dotnet/private/rules/csharp/library.bzl b/dotnet/private/rules/csharp/library.bzl
+--- a/dotnet/private/rules/csharp/library.bzl
++++ b/dotnet/private/rules/csharp/library.bzl
+@@ -54,7 +54,7 @@ def _compile_action(ctx, tfm):
+         is_analyzer = ctx.attr.is_analyzer,
+         is_language_specific_analyzer = ctx.attr.is_language_specific_analyzer,
+         analyzer_configs = ctx.files.analyzer_configs,
+-        compiler_options = ctx.attr.compiler_options,
++        compiler_options = [ctx.expand_location(option, targets = ctx.attr.compile_data) for option in ctx.attr.compiler_options],
+         interceptors_namespaces = ctx.attr.interceptors_namespaces,
+         is_windows = ctx.target_platform_has_constraint(ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]),
+     )

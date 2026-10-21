@@ -58,11 +58,13 @@ service(
     name = "release",
     service = "hrc",
     description = "Hosted Runner Controller",
-    deps = ["//:docs", "//:licenses", "//runner"],
-
+    deps = [
+        "//:docs",
+        "//:licenses",
+        "//runner",
+    ],
     os = OS,
     arch = ARCH,
-
     bin = ":hrc",
     args = [
         "-config",
@@ -73,7 +75,6 @@ service(
         "@platforms//os:windows": "pkg/control.ps1",
         "//conditions:default": "pkg/control",
     }),
-
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )

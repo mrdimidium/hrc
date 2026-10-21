@@ -52,22 +52,34 @@ def service_contents(ctx, outputs, settings, executable):
     target = ctx.actions.declare_file(ctx.label.name + "/TARGET")
     ctx.actions.write(target, ctx.attr.arch + "-" + ctx.attr.os + "\n")
     _add(files, target, "TARGET", "0644")
+    mappings = []
+    directories = []
+    symlinks = []
+    dependency_files = []
     for dep in ctx.attr.deps:
-        if PackageFilegroupInfo in dep or PackageFilesInfo in dep:
-            fail("service deps accept ordinary targets; pass their files rather than pkg_files mappings: " + str(dep.label))
+        if PackageFilegroupInfo in dep:
+            package = dep[PackageFilegroupInfo]
+            mappings.extend(package.pkg_files)
+            directories.extend(package.pkg_dirs)
+            symlinks.extend(package.pkg_symlinks)
+            dependency_files.append(dep[DefaultInfo].files)
+            continue
+        if PackageFilesInfo in dep:
+            mappings.append((dep[PackageFilesInfo], dep.label))
+            dependency_files.append(dep[DefaultInfo].files)
+            continue
         info = dep[DefaultInfo]
         for file in info.files.to_list():
             # A single-file filegroup can report a source document as executable.
             # Source deps are data; actual executable rules produce generated files.
             mode = "0755" if file.is_directory or (not file.is_source and info.files_to_run.executable == file) else "0644"
             _add(files, file, _dependency_path(file), mode)
-    mappings = []
     for mode in ["0644", "0755"]:
         mappings.append((PackageFilesInfo(
             dest_src_map = {destination: file for destination, (file, file_mode) in files.items() if file_mode == mode},
             attributes = {"mode": mode},
         ), ctx.label))
     return [
-        DefaultInfo(files = depset([file for file, _mode in files.values()])),
-        PackageFilegroupInfo(pkg_files = mappings, pkg_dirs = [], pkg_symlinks = []),
+        DefaultInfo(files = depset([file for file, _mode in files.values()], transitive = dependency_files)),
+        PackageFilegroupInfo(pkg_files = mappings, pkg_dirs = directories, pkg_symlinks = symlinks),
     ]
