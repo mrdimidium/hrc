@@ -1,0 +1,217 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+--- a/src/Runner.Common/HostContext.cs
++++ b/src/Runner.Common/HostContext.cs
+@@ -298,54 +298,9 @@
+                 _userAgents.Add(new ProductInfoHeaderValue("HttpProxyConfigured", bool.TrueString));
+             }
+ 
+-            var credFile = GetConfigFile(WellKnownConfigFile.Credentials);
+-            if (File.Exists(credFile))
+-            {
+-                var credData = IOUtil.LoadObject<CredentialData>(credFile);
+-                if (credData != null &&
+-                    credData.Data.TryGetValue("clientId", out var clientId))
+-                {
+-                    _userAgents.Add(new ProductInfoHeaderValue("ClientId", clientId));
+-                }
+-
+-                // for Hosted runner, we can pull orchestrationId from JWT claims of the runner listening token.
+-                if (credData != null &&
+-                    credData.Scheme == Constants.Configuration.OAuthAccessToken &&
+-                    credData.Data.TryGetValue(Constants.Runner.CommandLine.Args.Token, out var accessToken) &&
+-                    !string.IsNullOrEmpty(accessToken))
+-                {
+-                    try
+-                    {
+-                        var jwt = JsonWebToken.Create(accessToken);
+-                        var claims = jwt.ExtractClaims();
+-                        var orchestrationId = claims.FirstOrDefault(x => string.Equals(x.Type, "orch_id", StringComparison.OrdinalIgnoreCase))?.Value;
+-                        if (string.IsNullOrEmpty(orchestrationId))
+-                        {
+-                            // fallback to orchid for C# actions-service
+-                            orchestrationId = claims.FirstOrDefault(x => string.Equals(x.Type, "orchid", StringComparison.OrdinalIgnoreCase))?.Value;
+-                        }
+-
+-                        if (!string.IsNullOrEmpty(orchestrationId))
+-                        {
+-                            _trace.Info($"Pull OrchestrationId {orchestrationId} from runner JWT claims");
+-                            _userAgents.Insert(0, new ProductInfoHeaderValue("OrchestrationId", orchestrationId));
+-                        }
+-                    }
+-                    catch (Exception ex)
+-                    {
+-                        _trace.Error("Fail to extract OrchestrationId from runner JWT claims");
+-                        _trace.Error(ex);
+-                    }
+-                }
+-            }
+-
+-            var runnerFile = GetConfigFile(WellKnownConfigFile.Runner);
+-            if (File.Exists(runnerFile))
+-            {
+-                var runnerSettings = IOUtil.LoadObject<RunnerSettings>(runnerFile, true);
+-                _userAgents.Add(new ProductInfoHeaderValue("RunnerId", runnerSettings.AgentId.ToString(CultureInfo.InvariantCulture)));
+-                _userAgents.Add(new ProductInfoHeaderValue("GroupId", runnerSettings.PoolId.ToString(CultureInfo.InvariantCulture)));
+-            }
++            var runnerSettings = GetService<IConfigurationStore>().GetSettings();
++            _userAgents.Add(new ProductInfoHeaderValue("RunnerId", runnerSettings.AgentId.ToString(CultureInfo.InvariantCulture)));
++            _userAgents.Add(new ProductInfoHeaderValue("GroupId", runnerSettings.PoolId.ToString(CultureInfo.InvariantCulture)));
+ 
+             _userAgents.Add(new ProductInfoHeaderValue("CommitSHA", BuildConstants.Source.CommitHash));
+ 
+--- a/src/Runner.Common/ConfigurationStore.cs
++++ b/src/Runner.Common/ConfigurationStore.cs
+@@ -189,15 +189,19 @@
+         private string _migratedCredFilePath;
+         private string _serviceConfigFilePath;
+ 
+-        private CredentialData _creds;
+-        private CredentialData _migratedCreds;
+         private RunnerSettings _settings;
+-        private RunnerSettings _migratedSettings;
+ 
+         public override void Initialize(IHostContext hostContext)
+         {
+             base.Initialize(hostContext);
+ 
++            var json = Environment.GetEnvironmentVariable("RUNNER_CONFIG");
++            Environment.SetEnvironmentVariable("RUNNER_CONFIG", null);
++            ArgUtil.NotNullOrEmpty(json, "RUNNER_CONFIG");
++            _settings = StringUtil.ConvertFromJson<RunnerSettings>(json);
++            ArgUtil.NotNull(_settings, nameof(_settings));
++            _settings.WorkFolder = ".";
++
+             var currentAssemblyLocation = System.Reflection.Assembly.GetEntryAssembly().Location;
+             Trace.Info("currentAssemblyLocation: {0}", currentAssemblyLocation);
+ 
+@@ -228,7 +232,7 @@
+         public bool HasCredentials()
+         {
+             Trace.Info("HasCredentials()");
+-            bool credsStored = new FileInfo(_credFilePath).Exists || new FileInfo(_migratedCredFilePath).Exists;
++            bool credsStored = false;
+             Trace.Info("stored {0}", credsStored);
+             return credsStored;
+         }
+@@ -236,7 +240,7 @@
+         public bool IsConfigured()
+         {
+             Trace.Info("IsConfigured()");
+-            bool configured = new FileInfo(_configFilePath).Exists || new FileInfo(_migratedConfigFilePath).Exists;
++            bool configured = _settings != null;
+             Trace.Info("IsConfigured: {0}", configured);
+             return configured;
+         }
+@@ -252,67 +256,29 @@
+         public bool IsMigratedConfigured()
+         {
+             Trace.Info("IsMigratedConfigured()");
+-            bool configured = new FileInfo(_migratedConfigFilePath).Exists;
++            bool configured = false;
+             Trace.Info("IsMigratedConfigured: {0}", configured);
+             return configured;
+         }
+ 
+         public CredentialData GetCredentials()
+         {
+-            if (_creds == null)
+-            {
+-                _creds = IOUtil.LoadObject<CredentialData>(_credFilePath);
+-            }
+-
+-            return _creds;
++            throw new NotSupportedException("Worker credentials are supplied with the job over IPC.");
+         }
+ 
+         public CredentialData GetMigratedCredentials()
+         {
+-            if (_migratedCreds == null && File.Exists(_migratedCredFilePath))
+-            {
+-                _migratedCreds = IOUtil.LoadObject<CredentialData>(_migratedCredFilePath);
+-            }
+-
+-            return _migratedCreds;
++            throw new NotSupportedException("Worker credentials are supplied with the job over IPC.");
+         }
+ 
+         public RunnerSettings GetSettings()
+         {
+-            if (_settings == null)
+-            {
+-                RunnerSettings configuredSettings = null;
+-                if (File.Exists(_configFilePath))
+-                {
+-                    string json = File.ReadAllText(_configFilePath, Encoding.UTF8);
+-                    Trace.Info($"Read setting file: {json.Length} chars");
+-                    configuredSettings = StringUtil.ConvertFromJson<RunnerSettings>(json);
+-                }
+-
+-                ArgUtil.NotNull(configuredSettings, nameof(configuredSettings));
+-                _settings = configuredSettings;
+-            }
+-
+             return _settings;
+         }
+ 
+         public RunnerSettings GetMigratedSettings()
+         {
+-            if (_migratedSettings == null)
+-            {
+-                RunnerSettings configuredSettings = null;
+-                if (File.Exists(_migratedConfigFilePath))
+-                {
+-                    string json = File.ReadAllText(_migratedConfigFilePath, Encoding.UTF8);
+-                    Trace.Info($"Read migrated setting file: {json.Length} chars");
+-                    configuredSettings = StringUtil.ConvertFromJson<RunnerSettings>(json);
+-                }
+-
+-                ArgUtil.NotNull(configuredSettings, nameof(configuredSettings));
+-                _migratedSettings = configuredSettings;
+-            }
+-
+-            return _migratedSettings;
++            return null;
+         }
+ 
+         public void SaveCredential(CredentialData credential)
+--- a/src/Runner.Worker/Container/DockerCommandManager.cs
++++ b/src/Runner.Worker/Container/DockerCommandManager.cs
+@@ -47,8 +47,7 @@
+         {
+             base.Initialize(hostContext);
+             DockerPath = WhichUtil.Which("docker", true, Trace);
+-            string path = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Root), ".runner");
+-            string json = File.ReadAllText(path, Encoding.UTF8);
++            string json = StringUtil.ConvertToJson(HostContext.GetService<IConfigurationStore>().GetSettings());
+             DockerInstanceLabel = IOUtil.GetSha256Hash(json).Substring(0, 6);
+         }
+ 
+--- a/src/Runner.Worker/JobExtension.cs
++++ b/src/Runner.Worker/JobExtension.cs
+@@ -83,23 +83,8 @@
+                     context.Output($"Current runner version: '{BuildConstants.RunnerPackage.Version}'");
+ 
+                     var setting = HostContext.GetService<IConfigurationStore>().GetSettings();
+-                    var credFile = HostContext.GetConfigFile(WellKnownConfigFile.Credentials);
+-                    var credData = File.Exists(credFile) ? IOUtil.LoadObject<CredentialData>(credFile) : null;
+-                    // self-hosted runner is the only runner type using OAuth, can be identified via clientId
+-                    if (credData != null &&
+-                        credData.Data.TryGetValue("clientId", out _))
+-                    {
+-                        context.Output($"Runner name: '{setting.AgentName}'");
+-                        // use system variable for group name since self-hosted runners can be renamed
+-                        if (message.Variables.TryGetValue("system.runnerGroupName", out VariableValue runnerGroupName))
+-                        {
+-                            context.Output($"Runner group name: '{runnerGroupName.Value}'");
+-                        }
+-                        // print out machine name for self-hosted runner
+-                        context.Output($"Machine name: '{Environment.MachineName}'");
+-                    }
+                     // print runner info for lhr runners, skips standard runners (PoolId = 0)
+-                    else if (setting.PoolId > 0 && !string.IsNullOrEmpty(setting.PoolName) && !string.IsNullOrEmpty(setting.AgentName))
++                    if (setting.PoolId > 0 && !string.IsNullOrEmpty(setting.PoolName) && !string.IsNullOrEmpty(setting.AgentName))
+                     {
+                         context.Output($"Runner name: '{setting.AgentName}'");
+                         context.Output($"Runner group name: '{setting.PoolName}'");

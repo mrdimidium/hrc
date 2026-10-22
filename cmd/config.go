@@ -196,15 +196,11 @@ type Config struct {
 	Quota   Resources `json:"quota"`
 	Reserve Resources `json:"reserve"`
 
-	DirBin    string `json:"dirBin"`
 	DirBuilds string `json:"dirBuilds"`
 	DirRunner string `json:"dirRunner"`
 }
 
 func (c *Config) defaults() {
-	if c.DirBin == "" {
-		c.DirBin = "./hrc/bin"
-	}
 	if c.DirBuilds == "" {
 		c.DirBuilds = "./hrc/build"
 	}

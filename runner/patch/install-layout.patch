@@ -1,0 +1,79 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+--- a/src/Runner.Common/HostContext.cs
++++ b/src/Runner.Common/HostContext.cs
+@@ -137,7 +137,7 @@
+                 }
+ 
+                 // this should give us _diag folder under runner root directory
+-                string diagLogDirectory = Path.Combine(new DirectoryInfo(Path.GetDirectoryName(Assembly.GetEntryAssembly().Location)).Parent.FullName, Constants.Path.DiagDirectory);
++                string diagLogDirectory = GetDirectory(WellKnownDirectory.Diag);
+                 _traceManager = new TraceManager(new HostTraceListener(diagLogDirectory, hostType, logPageSize, logRetentionDays), stdoutTraceListener, this.SecretMasker);
+             }
+             else
+@@ -375,23 +375,19 @@
+             switch (directory)
+             {
+                 case WellKnownDirectory.Bin:
+-                    path = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
++                    path = Environment.GetEnvironmentVariable("RUNNER_BIN") ?? AppContext.BaseDirectory;
+                     break;
+ 
+                 case WellKnownDirectory.Diag:
+-                    path = Path.Combine(
+-                        GetDirectory(WellKnownDirectory.Root),
+-                        Constants.Path.DiagDirectory);
++                    path = Environment.GetEnvironmentVariable("RUNNER_DIAG") ?? Path.Combine(GetDirectory(WellKnownDirectory.Root), Constants.Path.DiagDirectory);
+                     break;
+ 
+                 case WellKnownDirectory.Externals:
+-                    path = Path.Combine(
+-                        GetDirectory(WellKnownDirectory.Root),
+-                        Constants.Path.ExternalsDirectory);
++                    path = Environment.GetEnvironmentVariable("RUNNER_EXTERNALS") ?? Path.GetFullPath(Path.Combine(GetDirectory(WellKnownDirectory.Bin), "..", Constants.Path.ExternalsDirectory));
+                     break;
+ 
+                 case WellKnownDirectory.Root:
+-                    path = new DirectoryInfo(GetDirectory(WellKnownDirectory.Bin)).Parent.FullName;
++                    path = Directory.GetCurrentDirectory();
+                     break;
+ 
+                 case WellKnownDirectory.Temp:
+@@ -438,7 +434,7 @@
+                     throw new NotSupportedException($"Unexpected well known directory: '{directory}'");
+             }
+ 
+-            _trace.Info($"Well known directory '{directory}': '{path}'");
++            _trace?.Info($"Well known directory '{directory}': '{path}'");
+             return path;
+         }
+ 
+--- a/src/Runner.Worker/Expressions/HashFilesFunction.cs
++++ b/src/Runner.Worker/Expressions/HashFilesFunction.cs
+@@ -67,10 +67,10 @@
+             context.Trace.Info($"Search root directory: '{githubWorkspace}'");
+             context.Trace.Info($"Search pattern: '{string.Join(", ", patterns)}'");
+ 
+-            string binDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
++            string binDir = Environment.GetEnvironmentVariable("RUNNER_BIN") ?? AppContext.BaseDirectory;
+             string runnerRoot = new DirectoryInfo(binDir).Parent.FullName;
+ 
+-            string node = Path.Combine(runnerRoot, "externals", NodeUtil.GetInternalNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");
++            string node = Path.Combine(Environment.GetEnvironmentVariable("RUNNER_EXTERNALS") ?? Path.Combine(runnerRoot, "externals"), NodeUtil.GetInternalNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");
+             string hashFilesScript = Path.Combine(binDir, "hashFiles");
+             var hashResult = string.Empty;
+             var p = new ProcessInvoker(new HashFilesTrace(context.Trace));
+@@ -200,10 +200,10 @@
+             context.Trace.Info($"Search root directory: '{githubWorkspace}'");
+             context.Trace.Info($"Search pattern: '{string.Join(", ", patterns)}'");
+ 
+-            string binDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
++            string binDir = Environment.GetEnvironmentVariable("RUNNER_BIN") ?? AppContext.BaseDirectory;
+             string runnerRoot = new DirectoryInfo(binDir).Parent.FullName;
+ 
+-            string node = Path.Combine(runnerRoot, "externals", NodeUtil.GetInternalNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");
++            string node = Path.Combine(Environment.GetEnvironmentVariable("RUNNER_EXTERNALS") ?? Path.Combine(runnerRoot, "externals"), NodeUtil.GetInternalNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");
+             string hashFilesScript = Path.Combine(binDir, "hashFiles");
+             var hashResult = string.Empty;
+             var p = new ProcessInvoker(new NewHashFilesTrace(context.Trace));

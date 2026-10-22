@@ -54,7 +54,7 @@ sudo ./control install
 # Upgrade: run from a newly extracted release archive.
 sudo ./control install
 
-# Uninstall (configuration, secrets, runner versions and build data are retained).
+# Uninstall (configuration, secrets and build data are retained).
 sudo ./control remove
 ```
 
@@ -86,9 +86,22 @@ Start-Service hrc
 # Upgrade: run from a newly extracted release archive.
 .\control.ps1 install -WinSWPath C:\Downloads\WinSW-x64.exe
 
-# Uninstall (configuration, secrets, runner versions and build data are retained).
+# Uninstall (configuration, secrets and build data are retained).
 .\control.ps1 remove
 ```
+
+The Worker and its resources are installed once in `/usr/lib/hrc` (under the
+installation prefix on macOS, or `runner` beside `hrc.exe` on Windows).
+`dirRunner` can select another installation. Each invocation uses its own
+workspace as cwd and receives settings in `RUNNER_CONFIG`, which the Worker
+consumes and removes before starting steps. It creates no `.runner` or runner
+credential files. This avoids persistent configuration files; it does not
+isolate the Worker from jobs running under the same operating system identity.
+
+`RUNNER_BIN`, `RUNNER_EXTERNALS` and `RUNNER_DIAG` select resources and diagnostics.
+Reused slots retain their `_work` directory; each job gets a separate directory
+under `dirBuilds/_diag`. Diagnostic logs are retained, including for temporary
+workspaces. Administrators should apply their desired log retention policy.
 
 ## License
 

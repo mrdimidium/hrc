@@ -5,11 +5,12 @@ load("@bazel_skylib//rules:select_file.bzl", "select_file")
 load("@rules_dotnet//dotnet:defs.bzl", "csharp_binary", "csharp_library", "publish_binary")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_filegroup", "pkg_files", "strip_prefix")
 load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_test.bzl", "py_test")
 load("@worker_restore//:projects.bzl", "PACKAGES", "PROJECTS")
 
 exports_files([
     "restore.py",
-    "rules_dotnet.patch",
+    "patch/rules-dotnet-resources.patch",
 ])
 
 filegroup(
@@ -137,6 +138,36 @@ PROJECT_RESOURCES = {
     for project in PROJECTS
 }
 
+PATCHED_SOURCES = [
+    "src/Runner.Common/ConfigurationStore.cs",
+    "src/Runner.Common/HostContext.cs",
+    "src/Runner.Worker/Container/DockerCommandManager.cs",
+    "src/Runner.Worker/Expressions/HashFilesFunction.cs",
+    "src/Runner.Worker/JobExtension.cs",
+]
+
+PATCHES = [
+    "patch/install-layout.patch",
+    "patch/runtime-config.patch",
+]
+
+py_binary(
+    name = "apply_patches_tool",
+    srcs = ["apply_patches.py"],
+    main = "apply_patches.py",
+    deps = ["@patch_ng"],
+)
+
+genrule(
+    name = "worker_sources",
+    srcs = PATCHES + ["runner/" + path for path in PATCHED_SOURCES],
+    outs = ["patched/" + path for path in PATCHED_SOURCES],
+    cmd = '"$(execpath :apply_patches_tool)" "$(@D)/patched" ' +
+          " ".join(['"$(execpath %s)"' % path for path in PATCHES]) + " -- " +
+          " ".join(['"$(execpath runner/%s)"' % path for path in PATCHED_SOURCES]),
+    tools = [":apply_patches_tool"],
+)
+
 py_binary(
     name = "build_inputs_tool",
     srcs = ["build_inputs.py"],
@@ -169,8 +200,8 @@ genrule(
                 "runner/src/**/bin/**",
                 "runner/src/**/obj/**",
                 "runner/src/Runner.Sdk/BuildConstants.cs",
-            ],
-        ) + [":inputs/AssemblyInfo.cs"] + ([":inputs/BuildConstants.cs"] if project == "Runner.Sdk" else []),
+            ] + ["runner/" + path for path in PATCHED_SOURCES],
+        ) + [":patched/" + path for path in PATCHED_SOURCES if path.startswith("src/" + project + "/")] + [":inputs/AssemblyInfo.cs"] + ([":inputs/BuildConstants.cs"] if project == "Runner.Sdk" else []),
         deps = ["@worker_nuget//" + package for package in PACKAGES[project]] + [":" + dependency for dependency in PROJECTS[project]],
         compile_data = [":inputs/" + name for name in PROJECT_RESOURCES[project]],
         compiler_options = ["/resource:$(execpath :inputs/%s),%s" % (name, name) for name in PROJECT_RESOURCES[project]],
@@ -196,6 +227,27 @@ publish_binary(
     binary = ":Runner.Worker",
     target_framework = "net8.0",
     self_contained = True,
+    visibility = ["//visibility:public"],
+)
+
+select_file(
+    name = "worker_executable",
+    srcs = ":worker",
+    subpath = select({
+        "@platforms//os:windows": "Runner.Worker.exe",
+        "//conditions:default": "Runner.Worker",
+    }),
+)
+
+py_test(
+    name = "layout_test",
+    size = "small",
+    srcs = ["layout_test.py"],
+    args = ["$(rootpath :worker_executable)"],
+    data = [
+        ":worker",
+        ":worker_executable",
+    ],
     visibility = ["//visibility:public"],
 )
 

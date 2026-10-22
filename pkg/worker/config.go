@@ -16,13 +16,15 @@ import (
 
 // Config describes the local runtime, regardless of how the runner is registered.
 type Config struct {
-	// Dir contains the complete runner installation, including bin/Runner.Worker.
-	// It must be dedicated to this invocation. Existing runtime configuration
-	// is never overwritten. The caller owns its workspaces and diagnostics.
+	// Dir is the shared installation containing bin/Runner.Worker and externals.
+	// WorkDir is the private workspace and process cwd. DiagDir receives this
+	// invocation's logs. The caller owns all three directories.
 	Dir     string
 	WorkDir string
+	DiagDir string
 
-	// Env overrides the inherited environment and the installation's .env file.
+	// Env overrides the inherited environment and the installation's optional .env.
+	// RUNNER_CONFIG, RUNNER_BIN, RUNNER_DIAG and RUNNER_EXTERNALS are set by Worker.
 	Env []string
 
 	// Name defaults to the hostname. ID and group identify the runner in logs
@@ -87,7 +89,18 @@ func (c *Config) validate() error {
 		}
 	}
 	if c.WorkDir == "" {
-		c.WorkDir = "_work"
+		c.WorkDir = "."
+	}
+	c.WorkDir, err = filepath.Abs(c.WorkDir)
+	if err != nil {
+		return err
+	}
+	if c.DiagDir == "" {
+		c.DiagDir = filepath.Join(c.WorkDir, "_diag")
+	}
+	c.DiagDir, err = filepath.Abs(c.DiagDir)
+	if err != nil {
+		return err
 	}
 	if c.HostedServer != nil {
 		hosted := *c.HostedServer
@@ -121,7 +134,7 @@ func (c *Config) renderRunner() ([]byte, error) {
 		DisableUpdate        bool   `json:"disableUpdate,omitempty"`
 	}{
 		AgentID: c.ID, AgentName: c.Name, PoolID: c.GroupID, PoolName: c.GroupName,
-		WorkFolder: c.WorkDir, GitHubURL: c.GitHubURL, ServerURL: c.ServerURL,
+		WorkFolder: ".", GitHubURL: c.GitHubURL, ServerURL: c.ServerURL,
 		ServerURLV2: c.ServerURLV2, HostedServer: c.HostedServer,
 		MonitorSocketAddress: c.MonitorSocket, DisableUpdate: c.DisableUpdate,
 	})

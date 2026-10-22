@@ -71,6 +71,8 @@ if ($Action -eq 'remove') {
         $path = Join-Path $InstallRoot $file
         if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
     }
+    $runner = Join-Path $InstallRoot 'runner'
+    if (Test-Path -LiteralPath $runner) { Remove-Item -LiteralPath $runner -Recurse -Force }
     if (-not (Get-ChildItem -LiteralPath $InstallRoot -Force)) { Remove-Item -LiteralPath $InstallRoot }
     Write-Output 'hrc: removed; configuration, secrets, build data and logs retained'
     return
@@ -91,14 +93,7 @@ if (-not $Staging) {
 }
 $runnerVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'runner/VERSION') -Raw).Trim()
 if ($runnerVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Invalid bundled runner version.' }
-$runnerBin = Join-Path $DataRoot 'state/bin'
-$runner = Join-Path $runnerBin "github-bundled-$runnerVersion"
-if (Test-Path -LiteralPath $runner) {
-    if (-not (Test-Path -LiteralPath (Join-Path $runner '.complete') -PathType Leaf) -or
-        (Get-Content -LiteralPath (Join-Path $runner 'VERSION') -Raw).Trim() -ne $runnerVersion) {
-        throw "Incomplete runner installation: $runner"
-    }
-}
+$runner = Join-Path $InstallRoot 'runner'
 if (-not $WinSWPath) { $WinSWPath = $wrapper }
 if (-not (Test-Path -LiteralPath $WinSWPath -PathType Leaf)) { throw 'Supply -WinSWPath pointing to a verified WinSW executable.' }
 $WinSWPath = [IO.Path]::GetFullPath($WinSWPath)
@@ -130,21 +125,22 @@ if (-not $Staging) {
 foreach ($file in @('hrc.exe', 'control.ps1', 'TARGET')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $InstallRoot $file) -Force
 }
-# Retain every published version, including an existing installation of this version.
-if (-not (Test-Path -LiteralPath $runner)) {
-    [void](New-Item -ItemType Directory -Path $runnerBin -Force)
-    $temporaryRunner = Join-Path $runnerBin (".install-" + [Guid]::NewGuid().ToString('N'))
+# Publish the shared runtime after stopping the service, retaining a rollback copy.
+$temporaryRunner = Join-Path $InstallRoot (".install-" + [Guid]::NewGuid().ToString('N'))
+$previousRunner = $temporaryRunner + '.previous'
+try {
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'runner') -Destination $temporaryRunner -Recurse
+    if (Test-Path -LiteralPath $runner) { Move-Item -LiteralPath $runner -Destination $previousRunner }
     try {
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'runner') -Destination $temporaryRunner -Recurse
-        New-Item -ItemType File -Path (Join-Path $temporaryRunner '.complete') | Out-Null
         Move-Item -LiteralPath $temporaryRunner -Destination $runner
-    } finally {
-        if (Test-Path -LiteralPath $temporaryRunner) { Remove-Item -LiteralPath $temporaryRunner -Recurse -Force }
+    } catch {
+        if (Test-Path -LiteralPath $previousRunner) { Move-Item -LiteralPath $previousRunner -Destination $runner }
+        throw
     }
+    if (Test-Path -LiteralPath $previousRunner) { Remove-Item -LiteralPath $previousRunner -Recurse -Force }
+} finally {
+    if (Test-Path -LiteralPath $temporaryRunner) { Remove-Item -LiteralPath $temporaryRunner -Recurse -Force }
 }
-# Record the selected version after its installation is complete.
-$versionFile = Join-Path $runnerBin 'VERSION'
-[IO.File]::WriteAllText($versionFile, $runnerVersion + "`n", (New-Object Text.UTF8Encoding($false)))
 if ($WinSWPath -ne $wrapper) { Copy-Item -LiteralPath $WinSWPath -Destination $wrapper -Force }
 if (-not (Test-Path -LiteralPath $config)) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'hrc.json') -Destination $config

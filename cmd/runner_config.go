@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -131,7 +132,7 @@ func (r *runnerRegistration) workerConfig(dir string, keepDescendants bool) work
 	return worker.Config{
 		Dir: dir, Name: r.settings.AgentName, ID: r.settings.AgentID,
 		GroupID: r.settings.PoolID, GroupName: r.settings.PoolName,
-		WorkDir: r.settings.WorkFolder, GitHubURL: r.settings.GitHubURL,
+		WorkDir: filepath.Join(dir, "_work"), GitHubURL: r.settings.GitHubURL,
 		ServerURL: r.settings.ServerURL, ServerURLV2: r.settings.ServerURLV2,
 		HostedServer: r.settings.HostedServer, MonitorSocket: r.settings.MonitorSocket,
 		DisableUpdate: true, KeepDescendants: keepDescendants,

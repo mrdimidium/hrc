@@ -58,6 +58,10 @@ service(
     name = "release",
     service = "hrc",
     description = "Hosted Runner Controller",
+    prefix = select({
+        "@platforms//os:linux": "/usr",
+        "//conditions:default": "/usr/local",
+    }),
     deps = [
         "//:docs",
         "//:licenses",

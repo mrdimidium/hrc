@@ -39,10 +39,11 @@ func workerProcessTestChild() int {
 	defer input.Close()
 	// macOS may resolve /var to /private/var; compare directories, not paths.
 	cwd, err := os.Stat(".")
-	want, wantErr := os.Stat(filepath.Join(os.Getenv("HRC_WORKER_TEST_DIR"), "bin"))
+	want, wantErr := os.Stat(filepath.Join(os.Getenv("HRC_WORKER_TEST_DIR"), "_work"))
 	if err != nil || wantErr != nil || !os.SameFile(cwd, want) {
 		return 21
 	}
+	fmt.Fprintln(os.Stdout, "settings="+os.Getenv("RUNNER_CONFIG"))
 	fmt.Fprintln(os.Stdout, "ready")
 	read := func() (int32, []byte, error) {
 		var header [8]byte
@@ -162,7 +163,7 @@ func workerTestConfig(t *testing.T, mode string, count int) (Config, *workerProc
 	}
 	output := &workerProcessTestOutput{ready: make(chan struct{})}
 	env := []string{"HRC_WORKER_PROCESS_TEST=1", "HRC_WORKER_TEST_DIR=" + dir, "HRC_WORKER_TEST_MODE=" + mode, "HRC_WORKER_TEST_COUNT=" + strconv.Itoa(count)}
-	return Config{Dir: dir, Env: env, Stdout: output, Stderr: output}, output
+	return Config{Dir: dir, WorkDir: filepath.Join(dir, "_work"), Env: env, Stdout: output, Stderr: output}, output
 }
 
 func workerProcessTestJob(index int) []byte {
@@ -302,7 +303,7 @@ func TestWorkerConcurrentCommandsAndWait(t *testing.T) {
 func TestWorkerFilesAndEnvironment(t *testing.T) {
 	t.Setenv("HRC_WORKER_TEST_LAYER", "inherited")
 	t.Setenv("HRC_WORKER_TEST_KEEP", "inherited")
-	config, _ := workerTestConfig(t, "cancel", 1)
+	config, output := workerTestConfig(t, "cancel", 1)
 	if err := os.WriteFile(filepath.Join(config.Dir, ".env"), []byte("HRC_WORKER_TEST_LAYER=dotenv\r\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -320,16 +321,22 @@ func TestWorkerFilesAndEnvironment(t *testing.T) {
 	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(filepath.Join(config.Dir, ".runner"))
-	if err != nil {
-		t.Fatal(err)
+	select {
+	case <-output.ready:
+	case <-time.After(10 * time.Second):
+		t.Fatal("child did not report settings")
 	}
+	_, got, ok := strings.Cut(output.String(), "settings=")
+	if !ok {
+		t.Fatal("child did not receive settings")
+	}
+	got, _, _ = strings.Cut(got, "\n")
 	var settings map[string]any
-	if err := json.Unmarshal(got, &settings); err != nil {
+	if err := json.Unmarshal([]byte(got), &settings); err != nil {
 		t.Fatal(err)
 	}
 	for key, want := range map[string]any{
-		"agentName": "test-runner", "agentId": float64(7), "workFolder": "_work",
+		"agentName": "test-runner", "agentId": float64(7), "workFolder": ".",
 		"poolId": float64(3), "poolName": "test-group",
 		"gitHubUrl": "https://github.example/org", "IsHostedServer": false,
 		"serverUrl": "https://pipelines.example/", "serverUrlV2": "https://broker.example/",
@@ -361,6 +368,43 @@ func TestWorkerFilesAndEnvironment(t *testing.T) {
 	}
 }
 
+func TestWorkersShareInstallation(t *testing.T) {
+	first, firstOutput := workerTestConfig(t, "cancel", 1)
+	second, secondOutput := workerTestConfig(t, "cancel", 1)
+	second.Dir = first.Dir
+	first.Name, second.Name = "first", "second"
+	workers := []*Worker{newTestWorker(t, first), newTestWorker(t, second)}
+	for _, w := range workers {
+		if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, output := range []*workerProcessTestOutput{firstOutput, secondOutput} {
+		select {
+		case <-output.ready:
+		case <-time.After(10 * time.Second):
+			t.Fatal("shared installation did not start both workers")
+		}
+	}
+	if !strings.Contains(firstOutput.String(), `"agentName":"first"`) ||
+		!strings.Contains(secondOutput.String(), `"agentName":"second"`) {
+		t.Fatal("workers received each other's configuration")
+	}
+	for _, w := range workers {
+		if err := w.CancelJob(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if result, err := waitTestWorker(t, w); err != nil || result != Canceled {
+			t.Fatalf("Wait = %v, %v", result, err)
+		}
+	}
+	for _, directory := range []string{first.Dir, first.WorkDir, second.WorkDir} {
+		if _, err := os.Stat(filepath.Join(directory, ".runner")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("runtime settings written into %s: %v", directory, err)
+		}
+	}
+}
+
 func TestWorkerExistingConfiguration(t *testing.T) {
 	config, _ := workerTestConfig(t, "frames", 1)
 	path := filepath.Join(config.Dir, ".runner")
@@ -369,18 +413,15 @@ func TestWorkerExistingConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := newTestWorker(t, config)
-	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); !errors.Is(err, os.ErrExist) {
-		t.Fatalf("existing configuration was not rejected: %v", err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
+	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
+		t.Fatalf("obsolete configuration interfered with startup: %v", err)
 	}
 	if got, err := os.ReadFile(path); err != nil || string(got) != string(settings) {
 		t.Fatalf("existing registration changed: %q, %v", got, err)
 	}
 }
 
-func TestWorkerResultSurvivesCleanupFailure(t *testing.T) {
+func TestWorkerLeavesUnrelatedFiles(t *testing.T) {
 	config, _ := workerTestConfig(t, "cancel", 1)
 	w, err := New(config)
 	if err != nil {
@@ -390,11 +431,8 @@ func TestWorkerResultSurvivesCleanupFailure(t *testing.T) {
 	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
 		t.Fatal(err)
 	}
-	// Make removal fail independently of the child's normal TaskResult.
+	// Runtime configuration is in memory; unrelated legacy files are untouched.
 	path := filepath.Join(config.Dir, ".runner")
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -404,21 +442,21 @@ func TestWorkerResultSurvivesCleanupFailure(t *testing.T) {
 	if err := w.CancelJob(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if result, err := waitTestWorker(t, w); result != Canceled || !result.Valid() || err == nil {
-		t.Fatalf("lost normal TaskResult on cleanup failure: %v, %v", result, err)
+	if result, err := waitTestWorker(t, w); result != Canceled || err != nil {
+		t.Fatalf("Wait = %v, %v", result, err)
 	}
-	if err := w.Close(); err == nil {
-		t.Fatal("Close lost the cleanup failure")
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestWorkerStartupFailureCleanup(t *testing.T) {
-	for _, mode := range []string{"existing_file", "bad_environment", "bad_executable"} {
+	for _, mode := range []string{"bad_workspace", "bad_environment", "bad_executable"} {
 		t.Run(mode, func(t *testing.T) {
 			config, _ := workerTestConfig(t, "frames", 1)
 			switch mode {
-			case "existing_file":
-				if err := os.WriteFile(filepath.Join(config.Dir, ".runner"), []byte("preserve"), 0600); err != nil {
+			case "bad_workspace":
+				if err := os.WriteFile(config.WorkDir, []byte("not a directory"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			case "bad_environment":
@@ -437,12 +475,8 @@ func TestWorkerStartupFailureCleanup(t *testing.T) {
 			if _, err := waitTestWorker(t, w); err == nil {
 				t.Fatal("startup failure lost by Wait")
 			}
-			settings, err := os.ReadFile(filepath.Join(config.Dir, ".runner"))
-			if mode == "existing_file" {
-				if err != nil || string(settings) != "preserve" {
-					t.Fatalf("existing settings changed: %q, %v", settings, err)
-				}
-			} else if !errors.Is(err, os.ErrNotExist) {
+			_, err := os.Stat(filepath.Join(config.Dir, ".runner"))
+			if !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("settings survived failed startup: %v", err)
 			}
 		})

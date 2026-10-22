@@ -31,6 +31,7 @@ if [ "$action" = remove ]; then
     select_init
     sh "$payload/scripts/preremove.sh" remove
     rm -f "$binary" "$service"
+    rm -rf "$prefix/lib/hrc"
     sh "$payload/scripts/postremove.sh" remove
     for hook in preinstall postinstall preremove postremove; do
         rm -f "$payload/scripts/$hook.sh"
@@ -81,38 +82,32 @@ IFS= read -r runner_version < "$bundle/runner/VERSION"
 if ! expr "$runner_version" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null; then
     echo 'hrc: invalid bundled runner version' >&2; exit 1
 fi
-runner_bin="$state_dir/bin"
-runner="$runner_bin/github-bundled-$runner_version"
-if [ -e "$runner" ] || [ -L "$runner" ]; then
-    [ -f "$runner/.complete" ] && [ "$(cat "$runner/VERSION")" = "$runner_version" ] || {
-        echo "hrc: incomplete runner installation: $runner" >&2; exit 1
-    }
-fi
+runner="$prefix/lib/hrc"
 sh "$bundle/scripts/preinstall.sh" install
 install_dir 0755 root "$admin_group" "$prefix/bin"
 install_dir 0755 root "$admin_group" "$payload"
 install_dir 0755 root "$admin_group" "$payload/scripts"
 install_dir 0755 root "$admin_group" "$(dirname "$service")"
 
-# Publish a writable versioned installation; never replace a runner in use.
-install_dir 0700 hrc hrc "$runner_bin"
-if [ ! -e "$runner" ]; then
-    runner_temporary="$runner.install.$$"
-    trap 'rm -rf "$runner_temporary"' 0
-    trap 'exit 1' 1 2 15
-    mkdir "$runner_temporary"
-    cp -R "$bundle/runner/." "$runner_temporary/"
-    : > "$runner_temporary/.complete"
-    chmod -R u=rwX,go= "$runner_temporary"
-    chown -R hrc:hrc "$runner_temporary"
-    mv "$runner_temporary" "$runner"
-    trap - 0 1 2 15
+# The preinstall hook stopped the service. Publish a shared, root-owned runtime.
+install_dir 0755 root "$admin_group" "$prefix/lib"
+runner_temporary="$runner.install.$$"
+runner_previous="$runner.previous.$$"
+trap 'if [ ! -e "$runner" ] && [ -e "$runner_previous" ]; then mv "$runner_previous" "$runner"; fi; rm -rf "$runner_temporary"' 0
+trap 'exit 1' 1 2 15
+mkdir "$runner_temporary"
+cp -R "$bundle/runner/." "$runner_temporary/"
+chmod -R u=rwX,go=rX "$runner_temporary"
+chown -R root:"$admin_group" "$runner_temporary"
+if [ -e "$runner" ] || [ -L "$runner" ]; then
+    mv "$runner" "$runner_previous"
 fi
-# Record the selected version after its installation is complete.
-runner_version_file="$runner_bin/VERSION"
-printf '%s\n' "$runner_version" > "$runner_version_file"
-chmod 0600 "$runner_version_file"
-chown hrc:hrc "$runner_version_file"
+if ! mv "$runner_temporary" "$runner"; then
+    [ ! -e "$runner_previous" ] || mv "$runner_previous" "$runner"
+    exit 1
+fi
+rm -rf "$runner_previous"
+trap - 0 1 2 15
 install_file 0755 "$bundle/control" "$payload/control"
 install_file 0644 "$bundle/TARGET" "$payload/TARGET"
 for hook in preinstall postinstall preremove postremove; do

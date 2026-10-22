@@ -431,7 +431,7 @@ func TestServerRunRunnerUsesWorker(t *testing.T) {
 				case "/_apis/runtime/runnerscalesets/7/generatejitconfig":
 					var settings map[string]any
 					json.NewDecoder(r.Body).Decode(&settings)
-					if settings["workFolder"] != "_work" || !strings.HasPrefix(fmt.Sprint(settings["name"]), "host-runner-") {
+					if settings["workFolder"] != "." || !strings.HasPrefix(fmt.Sprint(settings["name"]), "host-runner-") {
 						t.Errorf("bad JIT settings: %v", settings)
 					}
 					if mode == "jiterror" {
@@ -463,7 +463,7 @@ func TestServerRunRunnerUsesWorker(t *testing.T) {
 				t.Errorf("complete=%d delete=%d", completed.Load(), deleted.Load())
 			}
 			entries, e := os.ReadDir(cfg.DirBuilds)
-			if e != nil || len(entries) != 0 {
+			if e != nil || len(entries) > 1 || (len(entries) == 1 && entries[0].Name() != "_diag") {
 				t.Errorf("runner directory remains: %v %v", entries, e)
 			}
 			if _, e = os.Stat(filepath.Join(worker.dir, "bin", workerBinary())); e != nil {

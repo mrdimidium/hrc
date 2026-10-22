@@ -12,6 +12,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -37,11 +38,14 @@ func run(ctx context.Context, cfg *Config, group *Group, host *slots) error {
 
 	runnerDir := cfg.DirRunner
 	if runnerDir == "" {
-		version, err := os.ReadFile(filepath.Join(cfg.DirBin, "VERSION"))
+		executable, err := os.Executable()
 		if err != nil {
-			return fmt.Errorf("read runner version: %w", err)
+			return fmt.Errorf("find hrc installation: %w", err)
 		}
-		runnerDir = filepath.Join(cfg.DirBin, "github-bundled-"+strings.TrimSpace(string(version)))
+		runnerDir = filepath.Join(filepath.Dir(executable), "..", "lib", "hrc")
+		if runtime.GOOS == "windows" {
+			runnerDir = filepath.Join(filepath.Dir(executable), "runner")
+		}
 	}
 
 	if _, err := worker.New(worker.Config{Dir: runnerDir}); err != nil {
@@ -296,7 +300,7 @@ func sameLabels(current, desired []scaleset.Label) bool {
 }
 
 // runRunner registers and runs one ephemeral runner. Without dirs, it runs in
-// a temporary copy of the runner, removed afterwards; otherwise it runs in a
+// a temporary workspace, removed afterwards; otherwise it runs in a
 // directory reused from the pool, and leaves the job's processes running.
 func runRunner(ctx context.Context, client *scaleset.Client, scaleSetID int, cfg *Config, runnerDir string, dirs *dirPool) error {
 	var dir, name string
@@ -310,26 +314,20 @@ func runRunner(ctx context.Context, client *scaleset.Client, scaleSetID int, cfg
 				slog.Error("Remove runner directory", "dir", dir, "err", err)
 			}
 		}()
-		if err := os.CopyFS(dir, os.DirFS(runnerDir)); err != nil {
-			return fmt.Errorf("copy runner: %w", err)
-		}
 		name = cfg.Id + "-" + filepath.Base(dir)
 	} else {
 		var release func()
 		dir, release = dirs.take()
 		defer release()
-		if err := installRunner(dir, runnerDir); err != nil {
-			return err
-		}
 		// A runner left registered by a crash must not block the name.
 		name = fmt.Sprintf("%s-%s-%06x", cfg.Id, filepath.Base(dir), rand.Uint32()&0xffffff)
 	}
-	version, err := os.ReadFile(filepath.Join(dir, "VERSION"))
+	version, err := os.ReadFile(filepath.Join(runnerDir, "VERSION"))
 	if err != nil {
 		return fmt.Errorf("read runner version: %w", err)
 	}
 	jit, err := client.GenerateJitRunnerConfig(ctx, &scaleset.RunnerScaleSetJitRunnerSetting{
-		Name: name, WorkFolder: "_work",
+		Name: name, WorkFolder: ".",
 	}, scaleSetID)
 	if err != nil {
 		return fmt.Errorf("generate runner config: %w", err)
@@ -338,7 +336,17 @@ func runRunner(ctx context.Context, client *scaleset.Client, scaleSetID int, cfg
 	if err != nil {
 		return fmt.Errorf("decode runner config: %w", err)
 	}
-	local, err := worker.New(registration.workerConfig(dir, dirs != nil))
+	logRoot := filepath.Join(cfg.DirBuilds, "_diag")
+	if err := os.MkdirAll(logRoot, 0700); err != nil {
+		return err
+	}
+	diagDir, err := os.MkdirTemp(logRoot, name+"-")
+	if err != nil {
+		return err
+	}
+	localConfig := registration.workerConfig(dir, dirs != nil)
+	localConfig.Dir, localConfig.DiagDir = runnerDir, diagDir
+	local, err := worker.New(localConfig)
 	if err != nil {
 		return fmt.Errorf("create Worker: %w", err)
 	}

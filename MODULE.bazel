@@ -16,7 +16,7 @@ bazel_dep(name = "rules_python", version = "1.7.0")
 single_version_override(
     module_name = "rules_dotnet",
     patch_strip = 1,
-    patches = ["//runner:rules_dotnet.patch"],
+    patches = ["//runner:patch/rules-dotnet-resources.patch"],
 )
 
 bazel_dep(name = "rules_pkg", version = "1.3.0")
@@ -36,6 +36,24 @@ python.toolchain(python_version = "3.13")
 use_repo(python, "python_3_13_host", "pythons_hub")
 
 register_toolchains("@pythons_hub//:all")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "patch_ng",
+    urls = ["https://github.com/conan-io/python-patch-ng/archive/refs/tags/1.19.0.tar.gz"],
+    integrity = "sha256-Gb4jkHC5YiT/XZXeW+PAEGEDYc3JKvhjRYj4yYaG7wg=",
+    strip_prefix = "python-patch-ng-1.19.0",
+    build_file_content = """
+load("@rules_python//python:py_library.bzl", "py_library")
+py_library(
+    name = "patch_ng",
+    srcs = ["patch_ng.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+""",
+)
 
 # .NET
 dotnet = use_extension("@rules_dotnet//dotnet:extensions.bzl", "dotnet")
