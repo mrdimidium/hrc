@@ -66,7 +66,7 @@ node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 # and unofficial-builds.nodejs.org (arm64).
 NODE = {
     "20": ("20.20.2", "f21a2253025a5d1a14332a0b1ed48871689c5ca9aa37a6141428944b75de7d91", "7549872a8d1be4670d5219f39dc0aed6e6432c976f3cd25543bc249aa850f041"),
-    "24": ("24.21.0", "2a4a9c6af9b6f1dd67e4c460474a6fbb64fafffe49e1166af80715bfd4e50775", "3048b0811e158ca0d8672b59c839861763e144492980d8d29b369dfee45747e4"),
+    "24": ("24.22.1", "8fcd43dd6fd73cd450fc6a077d0d62d816cadcf28d85cca51ff85c65587ca707", "8254125825a3e5e834bd8a260dab4c8303f720464a741506ec27989b9ba1769b"),
 }
 
 [
