@@ -6,6 +6,11 @@ Notable changes to hrc, in the format of
 
 ## [Unreleased]
 
+### Changed
+
+- Update the bundled GitHub Actions runner from 2.338.0 to 2.338.2 and Node.js
+  24 from 24.21.0 to 24.22.1.
+
 ## [0.2.0] - 2026-10-27
 
 ### Changed
