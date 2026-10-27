@@ -6,6 +6,23 @@ Notable changes to hrc, in the format of
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-27
+
+### Changed
+
+- Build the .NET Worker and its dependencies directly with Bazel, including
+  the .NET runtime in the release archive, instead of using upstream runner
+  build scripts.
+- Download and package Node.js 20 and 24 through Bazel, including musl variants
+  on Linux. Ship only the Node.js executable and license from each distribution.
+- Move platform-specific Worker process management into a shared process
+  package, with tests for process startup and cleanup.
+
+### Added
+
+- A changelog used to generate release notes.
+- CI builds and tests for release branches.
+
 ## [0.1.1] - 2026-10-20
 
 ### Fixed
@@ -35,6 +52,7 @@ Builds for `amd64` and `arm64` on Linux, macOS and Windows, bundling GitHub
 Actions runner 2.338.0, with checksums in `SHASUMS256.txt` and build provenance
 attestations.
 
-[Unreleased]: https://github.com/mrdimidium/hrc/compare/release-0.1.1...HEAD
+[Unreleased]: https://github.com/mrdimidium/hrc/compare/release-0.2.0...HEAD
+[0.2.0]: https://github.com/mrdimidium/hrc/compare/release-0.1.1...release-0.2.0
 [0.1.1]: https://github.com/mrdimidium/hrc/compare/release-0.1.0...release-0.1.1
 [0.1.0]: https://github.com/mrdimidium/hrc/releases/tag/release-0.1.0
