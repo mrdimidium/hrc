@@ -1,7 +1,14 @@
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
 # SPDX-License-Identifier: BSD-3-Clause
 
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@gazelle//:def.bzl", "gazelle")
+
+bool_flag(
+    name = "bundled-dotnet",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
 
 filegroup(
     name = "docs",

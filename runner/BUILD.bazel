@@ -192,11 +192,19 @@ genrule(
     for project in PROJECTS
 ]
 
+config_setting(
+    name = "bundled_dotnet",
+    flag_values = {"//:bundled-dotnet": "true"},
+)
+
 publish_binary(
     name = "worker",
     binary = ":Runner.Worker",
     target_framework = "net8.0",
-    self_contained = True,
+    self_contained = select({
+        ":bundled_dotnet": True,
+        "//conditions:default": False,
+    }),
     visibility = ["//visibility:public"],
 )
 

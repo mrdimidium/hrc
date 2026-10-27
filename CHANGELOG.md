@@ -15,6 +15,7 @@ Notable changes to hrc, in the format of
 - Keep Worker diagnostics under `dirLogs/jobs/<jobId>`, one for job. Logs
   survive temporary workspace removal and slot reuse. Log retention is managed
   by the administrator.
+- Supports building without a bundled .NET runtime.
 
 ## [0.2.0] - 2026-10-27
 
