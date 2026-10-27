@@ -54,6 +54,16 @@ use_repo(
 register_toolchains("@dotnet_toolchains//:all")
 
 # Github Actions runner
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "actions_runner",
+    urls = ["https://github.com/actions/runner/archive/refs/tags/v2.338.2.tar.gz"],
+    sha256 = "3b7549b6cd109cd534de3e904cb257cd8447c1d00dd96d2242b7747b3473ce1f",
+    strip_prefix = "runner-2.338.2",
+    build_file = "//runner:runner.bazel",
+)
+
 runner_restore = use_extension("//runner:nuget.bzl", "restore")
 use_repo(runner_restore, "worker_restore")
 

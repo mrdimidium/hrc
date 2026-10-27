@@ -294,7 +294,7 @@
   "moduleExtensions": {
     "//runner:nuget.bzl%dependencies": {
       "general": {
-        "bzlTransitiveDigest": "Cxcv24fXU8rFjrAPXixZPt1PMyNZpvDPZoZunO2IQB8=",
+        "bzlTransitiveDigest": "G9+oLD275Jkkzemzhm8SDVsNpqR+4LEDlN5dEeYZH2s=",
         "usagesDigest": "PkLFNpM2YI0ZBd2GW46MkXff6JPjVz9thwb1lbJz4hU=",
         "recordedInputs": [
           "REPO_MAPPING:,rules_dotnet rules_dotnet+",
@@ -2005,7 +2005,7 @@
     },
     "//runner:nuget.bzl%restore": {
       "os:linux,arch:amd64": {
-        "bzlTransitiveDigest": "Cxcv24fXU8rFjrAPXixZPt1PMyNZpvDPZoZunO2IQB8=",
+        "bzlTransitiveDigest": "G9+oLD275Jkkzemzhm8SDVsNpqR+4LEDlN5dEeYZH2s=",
         "usagesDigest": "g4U+3+XDsdSLjRBLunjx466VhzBKa2l5uGuEiuGbhB4=",
         "recordedInputs": [
           "REPO_MAPPING:,rules_dotnet rules_dotnet+",
@@ -2014,7 +2014,8 @@
           "REPO_MAPPING:rules_dotnet+,bazel_lib bazel_lib+",
           "REPO_MAPPING:rules_dotnet+,bazel_skylib bazel_skylib+",
           "REPO_MAPPING:rules_dotnet+,bazel_tools bazel_tools",
-          "REPO_MAPPING:rules_dotnet+,platforms platforms"
+          "REPO_MAPPING:rules_dotnet+,platforms platforms",
+          "REPO_MAPPING:,actions_runner +http_archive+actions_runner"
         ],
         "generatedRepoSpecs": {
           "worker_restore": {
@@ -2022,12 +2023,12 @@
             "attributes": {
               "sdk": "@@rules_dotnet++dotnet+dotnet_x86_64-unknown-linux-gnu//:dotnet",
               "srcs": [
-                "@@//runner:runner/src/Directory.Build.props",
-                "@@//runner:runner/src/NuGet.Config",
-                "@@//runner:runner/src/Sdk/Sdk.csproj",
-                "@@//runner:runner/src/Runner.Sdk/Runner.Sdk.csproj",
-                "@@//runner:runner/src/Runner.Common/Runner.Common.csproj",
-                "@@//runner:runner/src/Runner.Worker/Runner.Worker.csproj"
+                "@@+http_archive+actions_runner//:src/Directory.Build.props",
+                "@@+http_archive+actions_runner//:src/NuGet.Config",
+                "@@+http_archive+actions_runner//:src/Sdk/Sdk.csproj",
+                "@@+http_archive+actions_runner//:src/Runner.Sdk/Runner.Sdk.csproj",
+                "@@+http_archive+actions_runner//:src/Runner.Common/Runner.Common.csproj",
+                "@@+http_archive+actions_runner//:src/Runner.Worker/Runner.Worker.csproj"
               ]
             }
           }

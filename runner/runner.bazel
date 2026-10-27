@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+exports_files(["LICENSE"] + glob(["src/**"]))
+
+[
+    filegroup(
+        name = project + "_sources",
+        srcs = glob(
+            ["src/" + project + "/**/*.cs"],
+            exclude = [
+                "src/**/bin/**",
+                "src/**/obj/**",
+                "src/Runner.Sdk/BuildConstants.cs",
+            ],
+        ),
+        visibility = ["//visibility:public"],
+    )
+    for project in [
+        "Sdk",
+        "Runner.Sdk",
+        "Runner.Common",
+        "Runner.Worker",
+    ]
+]

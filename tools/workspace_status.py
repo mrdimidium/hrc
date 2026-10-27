@@ -93,7 +93,6 @@ def main():
     commit = os.environ.get("HRC_COMMIT") or git("rev-parse", "--short=12", "HEAD") or "unknown"
 
     print("STABLE_HRC_VERSION", resolve_version(base, mode, commit))
-    print("STABLE_RUNNER_COMMIT", git("-C", "runner/runner", "rev-parse", "HEAD") or "unknown")
 
 
 if __name__ == "__main__":

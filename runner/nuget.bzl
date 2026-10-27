@@ -9,7 +9,7 @@ _PROJECTS = ["Sdk", "Runner.Sdk", "Runner.Common", "Runner.Worker"]
 
 def _restore_impl(ctx):
     for source in ctx.attr.srcs:
-        ctx.file("src/" + source.name.removeprefix("runner/src/"), ctx.read(source))
+        ctx.file("src/" + source.name.removeprefix("src/"), ctx.read(source))
     ctx.file("restore.py", ctx.read(ctx.attr.generator))
     sdk = str(ctx.path(ctx.attr.sdk))
     environment = {
@@ -53,7 +53,7 @@ def _restore_extension(ctx):
     _restore(
         name = "worker_restore",
         sdk = "@dotnet_" + platform + "//:" + ("dotnet.exe" if windows else "dotnet"),
-        srcs = [Label("//runner:runner/src/" + name) for name in ["Directory.Build.props", "NuGet.Config"] + [project + "/" + project + ".csproj" for project in _PROJECTS]],
+        srcs = [Label("@actions_runner//:src/" + name) for name in ["Directory.Build.props", "NuGet.Config"] + [project + "/" + project + ".csproj" for project in _PROJECTS]],
     )
 
 restore = module_extension(

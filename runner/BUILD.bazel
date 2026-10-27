@@ -10,6 +10,7 @@ load("@worker_restore//:projects.bzl", "PACKAGES", "PROJECTS")
 exports_files([
     "restore.py",
     "rules_dotnet.patch",
+    "runner.bazel",
 ])
 
 filegroup(
@@ -17,6 +18,7 @@ filegroup(
     srcs = [
         "BUILD.bazel",
         "nuget.bzl",
+        "runner.bazel",
     ],
     visibility = ["//visibility:public"],
 )
@@ -145,14 +147,14 @@ py_binary(
 
 genrule(
     name = "worker_inputs",
-    srcs = ["runner/src/runnerversion"] + ["runner/" + path for path in RESOURCES],
+    srcs = ["@actions_runner//:src/runnerversion"] + ["@actions_runner//:" + path for path in RESOURCES],
     outs = [
         "inputs/AssemblyInfo.cs",
         "inputs/BuildConstants.cs",
     ] + ["inputs/" + name for name in RESOURCES.values()],
-    cmd = '"$(execpath :build_inputs_tool)" "$(DOTNET_BIN)" "$(execpath runner/src/runnerversion)" ' + RID +
+    cmd = '"$(execpath :build_inputs_tool)" "$(DOTNET_BIN)" "$(execpath @actions_runner//:src/runnerversion)" ' + RID +
           ' "$(execpath inputs/BuildConstants.cs)" "$(execpath inputs/AssemblyInfo.cs)"' +
-          "".join([' "$(execpath runner/%s)" "$(execpath inputs/%s)"' % (path, name) for path, name in RESOURCES.items()]),
+          "".join([' "$(execpath @actions_runner//:%s)" "$(execpath inputs/%s)"' % (path, name) for path, name in RESOURCES.items()]),
     toolchains = ["@rules_dotnet//dotnet:resolved_toolchain"],
     tools = [
         ":build_inputs_tool",
@@ -163,14 +165,10 @@ genrule(
 [
     (csharp_binary if project == "Runner.Worker" else csharp_library)(
         name = project,
-        srcs = glob(
-            ["runner/src/" + project + "/**/*.cs"],
-            exclude = [
-                "runner/src/**/bin/**",
-                "runner/src/**/obj/**",
-                "runner/src/Runner.Sdk/BuildConstants.cs",
-            ],
-        ) + [":inputs/AssemblyInfo.cs"] + ([":inputs/BuildConstants.cs"] if project == "Runner.Sdk" else []),
+        srcs = [
+            "@actions_runner//:" + project + "_sources",
+            ":inputs/AssemblyInfo.cs",
+        ] + ([":inputs/BuildConstants.cs"] if project == "Runner.Sdk" else []),
         deps = ["@worker_nuget//" + package for package in PACKAGES[project]] + [":" + dependency for dependency in PROJECTS[project]],
         compile_data = [":inputs/" + name for name in PROJECT_RESOURCES[project]],
         compiler_options = ["/resource:$(execpath :inputs/%s),%s" % (name, name) for name in PROJECT_RESOURCES[project]],
@@ -225,22 +223,22 @@ pkg_files(
 pkg_files(
     name = "worker_scripts",
     srcs = [
-        "runner/src/Misc/layoutbin/hashFiles/index.js",
-        "runner/src/Misc/layoutbin/macos-run-invoker.js",
+        "@actions_runner//:src/Misc/layoutbin/hashFiles/index.js",
+        "@actions_runner//:src/Misc/layoutbin/macos-run-invoker.js",
     ],
     prefix = "runner/bin",
-    strip_prefix = strip_prefix.from_pkg("runner/src/Misc/layoutbin"),
+    strip_prefix = strip_prefix.from_root("src/Misc/layoutbin"),
 )
 
 pkg_files(
     name = "worker_metadata",
     srcs = [
-        "runner/LICENSE",
-        "runner/src/runnerversion",
+        "@actions_runner//:LICENSE",
+        "@actions_runner//:src/runnerversion",
     ],
     prefix = "runner",
     strip_prefix = strip_prefix.files_only(),
-    renames = {"runner/src/runnerversion": "VERSION"},
+    renames = {"@actions_runner//:src/runnerversion": "VERSION"},
 )
 
 pkg_filegroup(
