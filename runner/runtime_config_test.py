@@ -27,6 +27,7 @@ class RuntimeConfigTest(unittest.TestCase):
                 (root / name).write_text("invalid legacy configuration", encoding="utf-8")
             environment = dict(os.environ)
             environment.pop("RUNNER_CONFIG", None)
+            environment.pop("RUNNER_DIAG", None)
             executable = binary_dir / WORKER.name
             missing = subprocess.run([str(executable)], cwd=binary_dir, env=environment,
                                      capture_output=True, text=True, timeout=30)
@@ -46,6 +47,26 @@ class RuntimeConfigTest(unittest.TestCase):
             for name in legacy:
                 self.assertEqual((root / name).read_text(encoding="utf-8"),
                                  "invalid legacy configuration")
+
+    def test_separate_diagnostics_per_invocation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary_dir = root / "bin"
+            shutil.copytree(WORKER.parent, binary_dir)
+            for job in ("first", "second"):
+                diag = root / "logs" / job
+                environment = dict(os.environ,
+                    RUNNER_CONFIG=json.dumps({"agentId": 7, "agentName": job,
+                                              "poolId": 3, "workFolder": "_work"}),
+                    RUNNER_DIAG=str(diag))
+                result = subprocess.run([str(binary_dir / WORKER.name)], cwd=binary_dir,
+                                        env=environment, capture_output=True,
+                                        text=True, timeout=30)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("Expected '3'. Actual '0'", result.stdout)
+                self.assertEqual(len(list(diag.glob("Worker_*.log"))), 1)
+                self.assertFalse((root / "_diag").exists())
+            self.assertEqual(len(list((root / "logs").glob("*/Worker_*.log"))), 2)
 
 
 if __name__ == "__main__":

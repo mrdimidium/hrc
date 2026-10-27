@@ -23,7 +23,7 @@ type Config struct {
 	WorkDir string
 
 	// Env overrides the inherited environment and the installation's .env file.
-	// RUNNER_CONFIG is reserved and set by Worker.
+	// RUNNER_CONFIG and RUNNER_DIAG are reserved and set by Worker.
 	Env []string
 
 	// Name defaults to the hostname. ID and group identify the runner in logs

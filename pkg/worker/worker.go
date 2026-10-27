@@ -133,7 +133,9 @@ func New(config Config) (*Worker, error) {
 // its job schema. The context limits startup and transmission, not job lifetime.
 // Initial transmission is also bounded by .NET's 30-second startup timeout.
 // Once startup begins, failures consume this Worker and release its resources.
-func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage) (err error) {
+// diagDir selects the diagnostic directory for this job. An empty path uses
+// the installation's _diag directory; relative paths use the caller's cwd.
+func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage, diagDir string) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -165,12 +167,19 @@ func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage) (err err
 			err = w.finish(Unknown, err)
 		}
 	}()
+	if diagDir == "" {
+		diagDir = filepath.Join(w.config.Dir, "_diag")
+	}
+	diagDir, err = filepath.Abs(diagDir)
+	if err != nil {
+		return fmt.Errorf("resolve Worker diagnostics: %w", err)
+	}
 	settings, err := w.config.renderRunner()
 	if err != nil {
 		return fmt.Errorf("render Worker settings: %w", err)
 	}
 	overrides := append([]string{}, w.config.Env...)
-	overrides = append(overrides, "RUNNER_CONFIG="+string(settings))
+	overrides = append(overrides, "RUNNER_CONFIG="+string(settings), "RUNNER_DIAG="+diagDir)
 	env, err := environment(w.config.Dir, overrides)
 	if err != nil {
 		return fmt.Errorf("prepare Worker environment: %w", err)

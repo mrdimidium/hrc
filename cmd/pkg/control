@@ -131,7 +131,13 @@ trap - 0 1 2 15
 install_file "$service_mode" "$bundle/services/$service_source" "$service"
 
 if [ ! -e "$config" ] && [ ! -L "$config" ]; then
-    install_file 0640 "$bundle/hrc.json" "$config"
+    temporary="$config.new.$$"
+    trap 'rm -f "$temporary"' 0
+    trap 'exit 1' 1 2 15
+    sed "s|\"dirLogs\": \"\"|\"dirLogs\": \"$log_dir\"|" "$bundle/hrc.json" > "$temporary"
+    install_file 0640 "$temporary" "$config"
+    rm -f "$temporary"
+    trap - 0 1 2 15
 fi
 sh "$bundle/scripts/postinstall.sh" install
 echo "hrc: installed; removal command: $payload/control remove"

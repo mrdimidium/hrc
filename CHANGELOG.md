@@ -12,6 +12,9 @@ Notable changes to hrc, in the format of
   24 from 24.21.0 to 24.22.1.
 - Pass Worker settings through `RUNNER_CONFIG` instead of writing a `.runner`
   file.
+- Keep Worker diagnostics under `dirLogs/jobs/<jobId>`, one for job. Logs
+  survive temporary workspace removal and slot reuse. Log retention is managed
+  by the administrator.
 
 ## [0.2.0] - 2026-10-27
 

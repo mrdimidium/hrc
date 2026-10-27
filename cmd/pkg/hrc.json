@@ -2,6 +2,7 @@
   "id": "build-01",
   "dirBin": "bin",
   "dirBuilds": "jobs",
+  "dirLogs": "",
   "groups": [
     {
       "url": "https://github.com/mrdimidium/hrc",

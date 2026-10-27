@@ -65,6 +65,7 @@ func TestMain(m *testing.M) {
 			os.Exit(34)
 		}
 		var job struct {
+			ID       string `json:"jobId"`
 			Marker   string `json:"unknownFutureField"`
 			Endpoint string `json:"testEndpoint"`
 		}
@@ -73,6 +74,16 @@ func TestMain(m *testing.M) {
 		}
 		if os.Getenv("WORKER_ENV") != "override" || os.Getenv("DOTENV_VALUE") != "present" {
 			os.Exit(36)
+		}
+		diag := os.Getenv("RUNNER_DIAG")
+		if diag == "" || filepath.Base(diag) != job.ID {
+			os.Exit(41)
+		}
+		if err := os.MkdirAll(diag, 0700); err != nil {
+			os.Exit(42)
+		}
+		if err := os.WriteFile(filepath.Join(diag, "Worker.log"), []byte("diagnostics"), 0600); err != nil {
+			os.Exit(43)
 		}
 		mode := os.Getenv("WORKER_TEST_MODE")
 		// Report delivery, so tests can act on a running job without sleeping.
@@ -129,6 +140,7 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 	if err != nil {
 		t.Fatal(err)
 	}
+	jobID := fmt.Sprintf("job-%d", time.Now().UnixNano())
 	var polls, renews, completes, deletes, tokens, sessions, acquires atomic.Int32
 	started := make(chan struct{})
 	var startedOnce sync.Once
@@ -208,11 +220,11 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 				t.Error("session not recovered")
 			}
 			if mode == "cancel" || mode == "kill" || mode == "recover" {
-				body := `{"jobId":"job","timeout":"00:00:16"}`
+				body := fmt.Sprintf(`{"jobId":%q,"timeout":"00:00:16"}`, jobID)
 				if mode == "kill" {
 					// Exercise the caller's short default grace when the server
 					// supplies no timeout, without waiting 45 seconds in tests.
-					body = `{"jobId":"job"}`
+					body = fmt.Sprintf(`{"jobId":%q}`, jobID)
 				}
 				json.NewEncoder(w).Encode(map[string]any{"messageType": "JobCancellation", "body": body})
 				return
@@ -236,7 +248,7 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 			if request["runnerOS"] != testRunnerOS() || request["billingOwnerId"] != "owner" {
 				t.Error("bad acquire payload")
 			}
-			json.NewEncoder(w).Encode(map[string]any{"jobId": "job", "messageType": "RunnerJobRequest", "plan": map[string]string{"planId": "plan"}, "unknownFutureField": "Привет 🌍", "testEndpoint": server.URL + "/job", "resources": map[string]any{"endpoints": []any{map[string]any{"name": "SystemVssConnection", "url": server.URL + "/job/", "authorization": map[string]any{"parameters": map[string]string{"AccessToken": "job-token"}}}}}})
+			json.NewEncoder(w).Encode(map[string]any{"jobId": jobID, "messageType": "RunnerJobRequest", "plan": map[string]string{"planId": "plan"}, "unknownFutureField": "Привет 🌍", "testEndpoint": server.URL + "/job", "resources": map[string]any{"endpoints": []any{map[string]any{"name": "SystemVssConnection", "url": server.URL + "/job/", "authorization": map[string]any{"parameters": map[string]string{"AccessToken": "job-token"}}}}}})
 		case "/job/renewjob":
 			n := renews.Add(1)
 			if mode == "lease" && n > 1 {
@@ -262,7 +274,7 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 				t.Errorf("wrong completion: %#v", body)
 			}
 			if mode == "crash" || mode == "kill" {
-				if body["planId"] != "plan" || body["jobId"] != "job" || body["billingOwnerId"] != "owner" {
+				if body["planId"] != "plan" || body["jobId"] != jobID || body["billingOwnerId"] != "owner" {
 					t.Error("bad fallback completion")
 				}
 			}
@@ -343,7 +355,7 @@ func TestControllerJobLifecycle(t *testing.T) {
 					}
 				}()
 			}
-			result, err := runJob(ctx, w.network, w.local, 150*time.Millisecond)
+			result, err := runJob(ctx, w.network, w.local, t.TempDir(), 150*time.Millisecond)
 			switch mode {
 			case "success", "refresh", "retry":
 				if result != worker.Succeeded || err != nil {
@@ -388,7 +400,7 @@ func TestControllerJobLifecycle(t *testing.T) {
 					t.Errorf("credential remains: %s %v", name, e)
 				}
 			}
-			if _, err = runJob(context.Background(), w.network, w.local, 150*time.Millisecond); err == nil {
+			if _, err = runJob(context.Background(), w.network, w.local, t.TempDir(), 150*time.Millisecond); err == nil {
 				t.Error("ephemeral runner reused")
 			}
 		})
@@ -404,6 +416,23 @@ func TestControllerRejectsUnsafeJIT(t *testing.T) {
 	}
 }
 
+func TestExecuteJobRejectsUnsafeDiagnosticPaths(t *testing.T) {
+	for _, id := range []string{"", ".", "..", "../escape", `..\escape`, "C:escape", "/absolute"} {
+		t.Run(id, func(t *testing.T) {
+			root := t.TempDir()
+			// No Worker or Listener is needed: rejection must precede startup.
+			result, completed, err := executeJob(t.Context(), nil, nil, &listener.RunJob{JobID: id}, root, time.Second)
+			if err == nil || completed || result != worker.Failed {
+				t.Fatalf("unsafe ID accepted: %v, %v, %v", result, completed, err)
+			}
+			entries, err := os.ReadDir(root)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("rejected job created diagnostics: %v, %v", entries, err)
+			}
+		})
+	}
+}
+
 func TestServerRunRunnerUsesWorker(t *testing.T) {
 	for _, mode := range []string{"success", "failure", "crash", "jiterror"} {
 		t.Run(mode, func(t *testing.T) {
@@ -416,7 +445,7 @@ func TestServerRunRunnerUsesWorker(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(worker.dir, ".env"), []byte(env), 0600); err != nil {
 				t.Fatal(err)
 			}
-			cfg := &Config{Id: "host", DirBuilds: t.TempDir()}
+			cfg := &Config{Id: "host", DirBuilds: t.TempDir(), DirLogs: t.TempDir()}
 			var api *httptest.Server
 			api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
@@ -463,8 +492,18 @@ func TestServerRunRunnerUsesWorker(t *testing.T) {
 				t.Errorf("complete=%d delete=%d", completed.Load(), deleted.Load())
 			}
 			entries, e := os.ReadDir(cfg.DirBuilds)
-			if e != nil || len(entries) != 0 {
-				t.Errorf("runner directory remains: %v %v", entries, e)
+			if mode == "jiterror" {
+				if e != nil || len(entries) != 0 {
+					t.Errorf("runner directory remains: %v %v", entries, e)
+				}
+			} else {
+				if e != nil || len(entries) != 0 {
+					t.Fatalf("runner directory remains: %v %v", entries, e)
+				}
+				logs, err := filepath.Glob(filepath.Join(cfg.DirLogs, "jobs", "*", "Worker.log"))
+				if err != nil || len(logs) != 1 {
+					t.Fatalf("job diagnostics not retained: %v %v", logs, err)
+				}
 			}
 			if _, e = os.Stat(filepath.Join(worker.dir, "bin", workerBinary())); e != nil {
 				t.Error("source installation removed")
@@ -511,7 +550,7 @@ func TestServerRunRunnerReusesDirectory(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cfg := &Config{Id: "host", DirBuilds: t.TempDir()}
+	cfg := &Config{Id: "host", DirBuilds: t.TempDir(), DirLogs: t.TempDir()}
 	dirs := newDirPool(cfg.DirBuilds, "smoke")
 	cached := filepath.Join(cfg.DirBuilds, "smoke-1", "_work", "cache")
 	for job := range 2 {
@@ -536,6 +575,10 @@ func TestServerRunRunnerReusesDirectory(t *testing.T) {
 	}
 	if len(names) != 2 || names[0] == names[1] || !strings.HasPrefix(names[0], "host-smoke-1-") || !strings.HasPrefix(names[1], "host-smoke-1-") {
 		t.Errorf("runner names %q: want distinct names of directory smoke-1", names)
+	}
+	logs, err := filepath.Glob(filepath.Join(cfg.DirLogs, "jobs", "*", "Worker.log"))
+	if err != nil || len(logs) != 2 {
+		t.Fatalf("reused slot did not retain separate job diagnostics: %v %v", logs, err)
 	}
 	if _, err := os.Stat(filepath.Join(cfg.DirBuilds, "smoke-1", ".runner")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("runner settings remain: %v", err)
@@ -757,7 +800,7 @@ func TestRunRetriesSessionWithoutInterruptingRunners(t *testing.T) {
 		}
 		cancel()
 	}()
-	cfg := &Config{Id: "host", DirBuilds: t.TempDir(), DirRunner: runner.dir}
+	cfg := &Config{Id: "host", DirBuilds: t.TempDir(), DirLogs: t.TempDir(), DirRunner: runner.dir}
 	group := &Group{Url: api.URL + "/org", Name: "smoke", Group: scaleset.DefaultRunnerGroup, Token: Secret{Src: "inline", Value: "pat"}}
 	if err := run(ctx, cfg, group, newSlots(1)); err != nil {
 		t.Fatalf("session failures must be retried: %v", err)

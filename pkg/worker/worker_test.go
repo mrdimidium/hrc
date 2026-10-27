@@ -43,6 +43,7 @@ func workerProcessTestChild() int {
 	if err != nil || wantErr != nil || !os.SameFile(cwd, want) {
 		return 21
 	}
+	fmt.Fprintln(os.Stdout, "diagnostics="+os.Getenv("RUNNER_DIAG"))
 	fmt.Fprintln(os.Stdout, "settings="+os.Getenv("RUNNER_CONFIG"))
 	fmt.Fprintln(os.Stdout, "ready")
 	read := func() (int32, []byte, error) {
@@ -203,7 +204,7 @@ func TestWorkerPayloadAndResults(t *testing.T) {
 			config, _ := workerTestConfig(t, "payload", 0)
 			config.Env = append(config.Env, "HRC_WORKER_TEST_PAYLOAD="+string(payload), "HRC_WORKER_TEST_EXIT="+strconv.Itoa(code))
 			w := newTestWorker(t, config)
-			if err := w.StartJob(t.Context(), payload); err != nil {
+			if err := w.StartJob(t.Context(), payload, ""); err != nil {
 				t.Fatal(err)
 			}
 			result, err := waitTestWorker(t, w)
@@ -217,7 +218,7 @@ func TestWorkerPayloadAndResults(t *testing.T) {
 					t.Fatalf("Wait = %v, %v; expected infrastructure exit %d", result, err, code)
 				}
 			}
-			if err := w.StartJob(t.Context(), payload); !errors.Is(err, ErrAlreadyStarted) {
+			if err := w.StartJob(t.Context(), payload, ""); !errors.Is(err, ErrAlreadyStarted) {
 				t.Fatalf("second StartJob: %v", err)
 			}
 		})
@@ -238,14 +239,14 @@ func TestWorkerCommands(t *testing.T) {
 			config, output := workerTestConfig(t, "cancel", 1)
 			w := newTestWorker(t, config)
 			ctx, cancel := context.WithCancel(t.Context())
-			if err := w.StartJob(ctx, workerProcessTestJob(0)); err != nil {
+			if err := w.StartJob(ctx, workerProcessTestJob(0), ""); err != nil {
 				t.Fatal(err)
 			}
 			cancel() // Startup context does not own the running job.
 			if err := w.CancelJob(ctx); !errors.Is(err, context.Canceled) {
 				t.Fatalf("canceled command: %v", err)
 			}
-			if err := w.StartJob(t.Context(), workerProcessTestJob(1)); !errors.Is(err, ErrAlreadyStarted) {
+			if err := w.StartJob(t.Context(), workerProcessTestJob(1), ""); !errors.Is(err, ErrAlreadyStarted) {
 				t.Fatalf("second StartJob while running: %v", err)
 			}
 			if err := test.send(w, t.Context()); err != nil {
@@ -274,7 +275,7 @@ func TestWorkerConcurrentCommandsAndWait(t *testing.T) {
 	w := newTestWorker(t, config)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	if err := w.StartJob(ctx, workerProcessTestJob(0)); err != nil {
+	if err := w.StartJob(ctx, workerProcessTestJob(0), ""); err != nil {
 		t.Fatal(err)
 	}
 	var commands sync.WaitGroup
@@ -305,10 +306,12 @@ func TestWorkerFilesAndEnvironment(t *testing.T) {
 	t.Setenv("HRC_WORKER_TEST_KEEP", "inherited")
 	config, output := workerTestConfig(t, "cancel", 1)
 	t.Setenv("RUNNER_CONFIG", "inherited settings must be overridden")
+	t.Setenv("RUNNER_DIAG", "inherited diagnostics must be overridden")
+	diagDir := filepath.Join(t.TempDir(), "job-logs")
 	if err := os.WriteFile(filepath.Join(config.Dir, ".env"), []byte("HRC_WORKER_TEST_LAYER=dotenv\r\nRUNNER_CONFIG=dotenv settings must be overridden\r\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	config.Env = append(config.Env, "RUNNER_CONFIG=caller settings must be overridden", "HRC_WORKER_TEST_EXPECT_ENV=override", "HRC_WORKER_TEST_LAYER=override")
+	config.Env = append(config.Env, "RUNNER_DIAG=caller diagnostics must be overridden", "RUNNER_CONFIG=caller settings must be overridden", "HRC_WORKER_TEST_EXPECT_ENV=override", "HRC_WORKER_TEST_LAYER=override")
 	hosted := false
 	config.Name, config.ID = "test-runner", 7
 	config.GroupID, config.GroupName = 3, "test-group"
@@ -319,13 +322,16 @@ func TestWorkerFilesAndEnvironment(t *testing.T) {
 	config.Name = "mutated"
 	hosted = true
 	config.Env[len(config.Env)-1] = "HRC_WORKER_TEST_LAYER=mutated"
-	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
+	if err := w.StartJob(t.Context(), workerProcessTestJob(0), diagDir); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case <-output.ready:
 	case <-time.After(10 * time.Second):
 		t.Fatal("child did not report settings")
+	}
+	if !strings.Contains(output.String(), "diagnostics="+diagDir+"\n") {
+		t.Fatalf("wrong diagnostics directory: %s", output.String())
 	}
 	_, got, ok := strings.Cut(output.String(), "settings=")
 	if !ok {
@@ -377,7 +383,7 @@ func TestWorkerExistingConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := newTestWorker(t, config)
-	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
+	if err := w.StartJob(t.Context(), workerProcessTestJob(0), ""); err != nil {
 		t.Fatalf("obsolete configuration interfered with startup: %v", err)
 	}
 	if got, err := os.ReadFile(path); err != nil || string(got) != string(settings) {
@@ -392,7 +398,7 @@ func TestWorkerLeavesUnrelatedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = w.Close() })
-	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
+	if err := w.StartJob(t.Context(), workerProcessTestJob(0), ""); err != nil {
 		t.Fatal(err)
 	}
 	// Runtime settings are in memory; unrelated legacy files are untouched.
@@ -429,7 +435,7 @@ func TestWorkerStartupFailureCleanup(t *testing.T) {
 				}
 			}
 			w := newTestWorker(t, config)
-			if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err == nil {
+			if err := w.StartJob(t.Context(), workerProcessTestJob(0), ""); err == nil {
 				t.Fatal("startup unexpectedly succeeded")
 			}
 			if _, err := waitTestWorker(t, w); err == nil {
@@ -450,7 +456,7 @@ func TestWorkerCloseDuringStartup(t *testing.T) {
 	defer cancel()
 	started := make(chan error, 1)
 	payload := json.RawMessage(`{"data":"` + strings.Repeat("x", 1<<20) + `"}`)
-	go func() { started <- w.StartJob(ctx, payload) }()
+	go func() { started <- w.StartJob(ctx, payload, "") }()
 	select {
 	case <-output.ready:
 	case <-ctx.Done():
@@ -482,7 +488,7 @@ func TestWorkerStartupTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	payload := json.RawMessage(`{"data":"` + strings.Repeat("x", 1<<20) + `"}`)
-	if err := w.StartJob(ctx, payload); !errors.Is(err, context.DeadlineExceeded) {
+	if err := w.StartJob(ctx, payload, ""); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("blocked StartJob: %v", err)
 	}
 	if result, err := waitTestWorker(t, w); result != Unknown || !errors.Is(err, context.DeadlineExceeded) {
@@ -496,7 +502,7 @@ func TestWorkerStartupTimeout(t *testing.T) {
 func TestWorkerCloseRunningJob(t *testing.T) {
 	config, _ := workerTestConfig(t, "ignore", 1)
 	w := newTestWorker(t, config)
-	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
+	if err := w.StartJob(t.Context(), workerProcessTestJob(0), ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := w.Close(); err != nil {
@@ -523,7 +529,7 @@ func TestWorkerBeforeStart(t *testing.T) {
 	if err := w.Shutdown(t.Context(), ShutdownReason(99)); err == nil {
 		t.Fatal("accepted an invalid shutdown reason")
 	}
-	if err := w.StartJob(t.Context(), json.RawMessage(`[]`)); err == nil {
+	if err := w.StartJob(t.Context(), json.RawMessage(`[]`), ""); err == nil {
 		t.Fatal("accepted a non-object job")
 	}
 	if err := w.Close(); err != nil {
@@ -534,7 +540,7 @@ func TestWorkerBeforeStart(t *testing.T) {
 	default:
 		t.Fatal("Close before StartJob did not close Done")
 	}
-	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); !errors.Is(err, ErrClosed) {
+	if err := w.StartJob(t.Context(), workerProcessTestJob(0), ""); !errors.Is(err, ErrClosed) {
 		t.Fatalf("StartJob after Close: %v", err)
 	}
 }
@@ -563,7 +569,7 @@ func TestWorkerSymlinkDirectory(t *testing.T) {
 	// Force Getwd to resolve the physical path, as it does for /var on macOS.
 	config.Env = append(config.Env, "HRC_WORKER_TEST_DIR="+link, "PWD=")
 	w := newTestWorker(t, config)
-	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
+	if err := w.StartJob(t.Context(), workerProcessTestJob(0), ""); err != nil {
 		t.Fatal(err)
 	}
 	if result, err := waitTestWorker(t, w); result != Succeeded || err != nil {

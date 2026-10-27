@@ -95,12 +95,12 @@ func TestConfigValidate(t *testing.T) {
 	checkError(t, cfg.Validate(), "id is required")
 	cfg.Id = "test-host"
 	checkError(t, cfg.Validate(), "")
-	if cfg.DirBin != "./hrc/bin" || cfg.DirBuilds != "./hrc/build" {
+	if cfg.DirBin != "./hrc/bin" || cfg.DirBuilds != "./hrc/build" || cfg.DirLogs != "./hrc/log" {
 		t.Fatalf("unexpected default directories: %+v", cfg)
 	}
-	cfg.DirBin, cfg.DirBuilds, cfg.DirRunner = "/bin", "/builds", "/runner"
+	cfg.DirBin, cfg.DirBuilds, cfg.DirRunner, cfg.DirLogs = "/bin", "/builds", "/runner", "/logs"
 	checkError(t, cfg.Validate(), "")
-	if cfg.DirBin != "/bin" || cfg.DirBuilds != "/builds" || cfg.DirRunner != "/runner" {
+	if cfg.DirBin != "/bin" || cfg.DirBuilds != "/builds" || cfg.DirRunner != "/runner" || cfg.DirLogs != "/logs" {
 		t.Fatalf("custom directories changed: %+v", cfg)
 	}
 	cfg.Groups = []Group{

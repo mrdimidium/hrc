@@ -147,7 +147,9 @@ $versionFile = Join-Path $runnerBin 'VERSION'
 [IO.File]::WriteAllText($versionFile, $runnerVersion + "`n", (New-Object Text.UTF8Encoding($false)))
 if ($WinSWPath -ne $wrapper) { Copy-Item -LiteralPath $WinSWPath -Destination $wrapper -Force }
 if (-not (Test-Path -LiteralPath $config)) {
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'hrc.json') -Destination $config
+    $settings = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'hrc.json') -Raw | ConvertFrom-Json
+    $settings.dirLogs = [string](Join-Path $DataRoot 'logs')
+    [IO.File]::WriteAllText($config, ($settings | ConvertTo-Json -Depth 20) + "`n", (New-Object Text.UTF8Encoding($false)))
 }
 [xml] $xml = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'services/hrc.winsw.xml') -Raw
 # The XML adapter accepts only plain strings, not the PSObject-wrapped strings

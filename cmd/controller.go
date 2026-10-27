@@ -355,7 +355,7 @@ func runRunner(ctx context.Context, client *scaleset.Client, scaleSetID int, cfg
 	if err != nil {
 		return fmt.Errorf("create Listener: %w", err)
 	}
-	result, err := runJob(ctx, network, local, time.Minute)
+	result, err := runJob(ctx, network, local, cfg.DirLogs, time.Minute)
 	if err != nil {
 		return fmt.Errorf("run job: %w", err)
 	}
@@ -365,7 +365,7 @@ func runRunner(ctx context.Context, client *scaleset.Client, scaleSetID int, cfg
 
 // runJob connects independent network supervision and local execution. It owns
 // cancellation policy, grace periods and completion after infrastructure failure.
-func runJob(ctx context.Context, network *listener.Listener, local *worker.Worker, cancelTimeout time.Duration) (result worker.Result, err error) {
+func runJob(ctx context.Context, network *listener.Listener, local *worker.Worker, logRoot string, cancelTimeout time.Duration) (result worker.Result, err error) {
 	result = worker.Failed
 	var job *listener.RunJob
 	completed := false
@@ -408,12 +408,20 @@ func runJob(ctx context.Context, network *listener.Listener, local *worker.Worke
 	if err != nil {
 		return result, err
 	}
-	result, completed, err = executeJob(ctx, network, local, job, cancelTimeout)
+	result, completed, err = executeJob(ctx, network, local, job, logRoot, cancelTimeout)
 	return result, err
 }
 
-func executeJob(ctx context.Context, network *listener.Listener, local *worker.Worker, job *listener.RunJob, grace time.Duration) (worker.Result, bool, error) {
-	if err := local.StartJob(ctx, job.Raw); err != nil {
+func executeJob(ctx context.Context, network *listener.Listener, local *worker.Worker, job *listener.RunJob, logRoot string, grace time.Duration) (worker.Result, bool, error) {
+	// The ID comes from the acquired job, not the scale-set notification.
+	if job.JobID == "" || job.JobID == "." || job.JobID == ".." || strings.ContainsAny(job.JobID, `/\:`) {
+		return worker.Failed, false, fmt.Errorf("unsafe job ID: %q", job.JobID)
+	}
+	diagDir := filepath.Join(logRoot, "jobs", job.JobID)
+	if err := os.MkdirAll(diagDir, 0700); err != nil {
+		return worker.Failed, false, fmt.Errorf("create job diagnostics: %w", err)
+	}
+	if err := local.StartJob(ctx, job.Raw, diagDir); err != nil {
 		return worker.Failed, false, err
 	}
 	var cause error

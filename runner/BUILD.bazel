@@ -10,6 +10,7 @@ load("@worker_restore//:projects.bzl", "PACKAGES", "PROJECTS")
 
 exports_files([
     "patch/runtime-config.patch",
+    "patch/diagnostics.patch",
     "restore.py",
     "rules_dotnet.patch",
     "runner.bazel",

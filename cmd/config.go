@@ -198,6 +198,7 @@ type Config struct {
 
 	DirBin    string `json:"dirBin"`
 	DirBuilds string `json:"dirBuilds"`
+	DirLogs   string `json:"dirLogs"`
 	DirRunner string `json:"dirRunner"`
 }
 
@@ -207,6 +208,9 @@ func (c *Config) defaults() {
 	}
 	if c.DirBuilds == "" {
 		c.DirBuilds = "./hrc/build"
+	}
+	if c.DirLogs == "" {
+		c.DirLogs = "./hrc/log"
 	}
 }
 
