@@ -6,6 +6,8 @@ Notable changes to hrc, in the format of
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-27
+
 ### Changed
 
 - Update the bundled GitHub Actions runner from 2.338.0 to 2.338.2 and Node.js
@@ -57,7 +59,8 @@ Builds for `amd64` and `arm64` on Linux, macOS and Windows, bundling GitHub
 Actions runner 2.338.0, with checksums in `SHASUMS256.txt` and build provenance
 attestations.
 
-[Unreleased]: https://github.com/mrdimidium/hrc/compare/release-0.2.0...HEAD
+[Unreleased]: https://github.com/mrdimidium/hrc/compare/release-0.2.1...HEAD
+[0.2.1]: https://github.com/mrdimidium/hrc/compare/release-0.2.0...release-0.2.1
 [0.2.0]: https://github.com/mrdimidium/hrc/compare/release-0.1.1...release-0.2.0
 [0.1.1]: https://github.com/mrdimidium/hrc/compare/release-0.1.0...release-0.1.1
 [0.1.0]: https://github.com/mrdimidium/hrc/releases/tag/release-0.1.0
