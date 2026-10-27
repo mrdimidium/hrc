@@ -43,6 +43,7 @@ func workerProcessTestChild() int {
 	if err != nil || wantErr != nil || !os.SameFile(cwd, want) {
 		return 21
 	}
+	fmt.Fprintln(os.Stdout, "settings="+os.Getenv("RUNNER_CONFIG"))
 	fmt.Fprintln(os.Stdout, "ready")
 	read := func() (int32, []byte, error) {
 		var header [8]byte
@@ -302,11 +303,12 @@ func TestWorkerConcurrentCommandsAndWait(t *testing.T) {
 func TestWorkerFilesAndEnvironment(t *testing.T) {
 	t.Setenv("HRC_WORKER_TEST_LAYER", "inherited")
 	t.Setenv("HRC_WORKER_TEST_KEEP", "inherited")
-	config, _ := workerTestConfig(t, "cancel", 1)
-	if err := os.WriteFile(filepath.Join(config.Dir, ".env"), []byte("HRC_WORKER_TEST_LAYER=dotenv\r\n"), 0600); err != nil {
+	config, output := workerTestConfig(t, "cancel", 1)
+	t.Setenv("RUNNER_CONFIG", "inherited settings must be overridden")
+	if err := os.WriteFile(filepath.Join(config.Dir, ".env"), []byte("HRC_WORKER_TEST_LAYER=dotenv\r\nRUNNER_CONFIG=dotenv settings must be overridden\r\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	config.Env = append(config.Env, "HRC_WORKER_TEST_EXPECT_ENV=override", "HRC_WORKER_TEST_LAYER=override")
+	config.Env = append(config.Env, "RUNNER_CONFIG=caller settings must be overridden", "HRC_WORKER_TEST_EXPECT_ENV=override", "HRC_WORKER_TEST_LAYER=override")
 	hosted := false
 	config.Name, config.ID = "test-runner", 7
 	config.GroupID, config.GroupName = 3, "test-group"
@@ -320,12 +322,18 @@ func TestWorkerFilesAndEnvironment(t *testing.T) {
 	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(filepath.Join(config.Dir, ".runner"))
-	if err != nil {
-		t.Fatal(err)
+	select {
+	case <-output.ready:
+	case <-time.After(10 * time.Second):
+		t.Fatal("child did not report settings")
 	}
+	_, got, ok := strings.Cut(output.String(), "settings=")
+	if !ok {
+		t.Fatal("child did not receive settings")
+	}
+	got, _, _ = strings.Cut(got, "\n")
 	var settings map[string]any
-	if err := json.Unmarshal(got, &settings); err != nil {
+	if err := json.Unmarshal([]byte(got), &settings); err != nil {
 		t.Fatal(err)
 	}
 	for key, want := range map[string]any{
@@ -339,7 +347,7 @@ func TestWorkerFilesAndEnvironment(t *testing.T) {
 			t.Errorf("%s = %v, want %v", key, settings[key], want)
 		}
 	}
-	for _, name := range []string{".credentials", ".credentials_rsaparams"} {
+	for _, name := range []string{".runner", ".credentials", ".credentials_rsaparams"} {
 		if _, err := os.Stat(filepath.Join(config.Dir, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("Worker materialized registration credentials %s: %v", name, err)
 		}
@@ -369,18 +377,15 @@ func TestWorkerExistingConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := newTestWorker(t, config)
-	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); !errors.Is(err, os.ErrExist) {
-		t.Fatalf("existing configuration was not rejected: %v", err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
+	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
+		t.Fatalf("obsolete configuration interfered with startup: %v", err)
 	}
 	if got, err := os.ReadFile(path); err != nil || string(got) != string(settings) {
 		t.Fatalf("existing registration changed: %q, %v", got, err)
 	}
 }
 
-func TestWorkerResultSurvivesCleanupFailure(t *testing.T) {
+func TestWorkerLeavesUnrelatedFiles(t *testing.T) {
 	config, _ := workerTestConfig(t, "cancel", 1)
 	w, err := New(config)
 	if err != nil {
@@ -390,11 +395,8 @@ func TestWorkerResultSurvivesCleanupFailure(t *testing.T) {
 	if err := w.StartJob(t.Context(), workerProcessTestJob(0)); err != nil {
 		t.Fatal(err)
 	}
-	// Make removal fail independently of the child's normal TaskResult.
+	// Runtime settings are in memory; unrelated legacy files are untouched.
 	path := filepath.Join(config.Dir, ".runner")
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -404,23 +406,19 @@ func TestWorkerResultSurvivesCleanupFailure(t *testing.T) {
 	if err := w.CancelJob(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if result, err := waitTestWorker(t, w); result != Canceled || !result.Valid() || err == nil {
-		t.Fatalf("lost normal TaskResult on cleanup failure: %v, %v", result, err)
+	if result, err := waitTestWorker(t, w); result != Canceled || err != nil {
+		t.Fatalf("Wait = %v, %v", result, err)
 	}
-	if err := w.Close(); err == nil {
-		t.Fatal("Close lost the cleanup failure")
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestWorkerStartupFailureCleanup(t *testing.T) {
-	for _, mode := range []string{"existing_file", "bad_environment", "bad_executable"} {
+	for _, mode := range []string{"bad_environment", "bad_executable"} {
 		t.Run(mode, func(t *testing.T) {
 			config, _ := workerTestConfig(t, "frames", 1)
 			switch mode {
-			case "existing_file":
-				if err := os.WriteFile(filepath.Join(config.Dir, ".runner"), []byte("preserve"), 0600); err != nil {
-					t.Fatal(err)
-				}
 			case "bad_environment":
 				if err := os.Mkdir(filepath.Join(config.Dir, ".env"), 0700); err != nil {
 					t.Fatal(err)
@@ -437,12 +435,8 @@ func TestWorkerStartupFailureCleanup(t *testing.T) {
 			if _, err := waitTestWorker(t, w); err == nil {
 				t.Fatal("startup failure lost by Wait")
 			}
-			settings, err := os.ReadFile(filepath.Join(config.Dir, ".runner"))
-			if mode == "existing_file" {
-				if err != nil || string(settings) != "preserve" {
-					t.Fatalf("existing settings changed: %q, %v", settings, err)
-				}
-			} else if !errors.Is(err, os.ErrNotExist) {
+			_, err := os.Stat(filepath.Join(config.Dir, ".runner"))
+			if !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("settings survived failed startup: %v", err)
 			}
 		})

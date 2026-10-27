@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+diff --git a/src/Runner.Common/ConfigurationStore.cs b/src/Runner.Common/ConfigurationStore.cs
+index 21276e2..d0bdc77 100644
+--- a/src/Runner.Common/ConfigurationStore.cs
++++ b/src/Runner.Common/ConfigurationStore.cs
+@@ -282,10 +282,13 @@ namespace GitHub.Runner.Common
+             if (_settings == null)
+             {
+                 RunnerSettings configuredSettings = null;
+-                if (File.Exists(_configFilePath))
++                // if (File.Exists(_configFilePath))
+                 {
+-                    string json = File.ReadAllText(_configFilePath, Encoding.UTF8);
+-                    Trace.Info($"Read setting file: {json.Length} chars");
++                    // string json = File.ReadAllText(_configFilePath, Encoding.UTF8);
++                    string json = Environment.GetEnvironmentVariable("RUNNER_CONFIG");
++                    Environment.SetEnvironmentVariable("RUNNER_CONFIG", null);
++                    ArgUtil.NotNullOrEmpty(json, "RUNNER_CONFIG");
++                    Trace.Info($"Read runtime settings: {json.Length} chars");
+                     configuredSettings = StringUtil.ConvertFromJson<RunnerSettings>(json);
+                 }
+ 
+diff --git a/src/Runner.Common/HostContext.cs b/src/Runner.Common/HostContext.cs
+index ffb0868..549d38d 100644
+--- a/src/Runner.Common/HostContext.cs
++++ b/src/Runner.Common/HostContext.cs
+@@ -298,6 +298,7 @@ namespace GitHub.Runner.Common
+                 _userAgents.Add(new ProductInfoHeaderValue("HttpProxyConfigured", bool.TrueString));
+             }
+ 
++            /*
+             var credFile = GetConfigFile(WellKnownConfigFile.Credentials);
+             if (File.Exists(credFile))
+             {
+@@ -339,10 +340,12 @@ namespace GitHub.Runner.Common
+                 }
+             }
+ 
+-            var runnerFile = GetConfigFile(WellKnownConfigFile.Runner);
+-            if (File.Exists(runnerFile))
++            */
++            // var runnerFile = GetConfigFile(WellKnownConfigFile.Runner);
++            // if (File.Exists(runnerFile))
+             {
+-                var runnerSettings = IOUtil.LoadObject<RunnerSettings>(runnerFile, true);
++                // var runnerSettings = IOUtil.LoadObject<RunnerSettings>(runnerFile, true);
++                var runnerSettings = GetService<IConfigurationStore>().GetSettings();
+                 _userAgents.Add(new ProductInfoHeaderValue("RunnerId", runnerSettings.AgentId.ToString(CultureInfo.InvariantCulture)));
+                 _userAgents.Add(new ProductInfoHeaderValue("GroupId", runnerSettings.PoolId.ToString(CultureInfo.InvariantCulture)));
+             }
+diff --git a/src/Runner.Worker/Container/DockerCommandManager.cs b/src/Runner.Worker/Container/DockerCommandManager.cs
+index 41b914a..7c41e6c 100644
+--- a/src/Runner.Worker/Container/DockerCommandManager.cs
++++ b/src/Runner.Worker/Container/DockerCommandManager.cs
+@@ -47,8 +47,11 @@ namespace GitHub.Runner.Worker.Container
+         {
+             base.Initialize(hostContext);
+             DockerPath = WhichUtil.Which("docker", true, Trace);
++            /*
+             string path = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Root), ".runner");
+             string json = File.ReadAllText(path, Encoding.UTF8);
++            */
++            string json = StringUtil.ConvertToJson(HostContext.GetService<IConfigurationStore>().GetSettings());
+             DockerInstanceLabel = IOUtil.GetSha256Hash(json).Substring(0, 6);
+         }
+ 
+diff --git a/src/Runner.Worker/JobExtension.cs b/src/Runner.Worker/JobExtension.cs
+index d3d5fb7..9b0bec6 100644
+--- a/src/Runner.Worker/JobExtension.cs
++++ b/src/Runner.Worker/JobExtension.cs
+@@ -84,7 +84,8 @@ namespace GitHub.Runner.Worker
+ 
+                     var setting = HostContext.GetService<IConfigurationStore>().GetSettings();
+                     var credFile = HostContext.GetConfigFile(WellKnownConfigFile.Credentials);
+-                    var credData = File.Exists(credFile) ? IOUtil.LoadObject<CredentialData>(credFile) : null;
++                    // var credData = File.Exists(credFile) ? IOUtil.LoadObject<CredentialData>(credFile) : null;
++                    CredentialData credData = null;
+                     // self-hosted runner is the only runner type using OAuth, can be identified via clientId
+                     if (credData != null &&
+                         credData.Data.TryGetValue("clientId", out _))

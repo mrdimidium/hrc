@@ -62,6 +62,8 @@ http_archive(
     sha256 = "3b7549b6cd109cd534de3e904cb257cd8447c1d00dd96d2242b7747b3473ce1f",
     strip_prefix = "runner-2.338.2",
     build_file = "//runner:runner.bazel",
+    patches = ["//runner:patch/runtime-config.patch"],
+    patch_args = ["-p1"],
 )
 
 runner_restore = use_extension("//runner:nuget.bzl", "restore")

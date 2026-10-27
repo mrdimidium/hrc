@@ -28,6 +28,7 @@ test_suite(
         "//pkg/listener:listener_test",
         "//pkg/process:process_test",
         "//pkg/worker:worker_test",
+        "//runner:runtime_config_test",
     ],
 )
 

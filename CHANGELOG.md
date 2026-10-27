@@ -10,14 +10,16 @@ Notable changes to hrc, in the format of
 
 - Update the bundled GitHub Actions runner from 2.338.0 to 2.338.2 and Node.js
   24 from 24.21.0 to 24.22.1.
+- Pass Worker settings through `RUNNER_CONFIG` instead of writing a `.runner`
+  file.
 
 ## [0.2.0] - 2026-10-27
 
 ### Changed
 
-- Build the .NET Worker and its dependencies directly with Bazel, including
-  the .NET runtime in the release archive, instead of using upstream runner
-  build scripts.
+- Build the .NET Worker and its dependencies directly with Bazel, including the
+  .NET runtime in the release archive, instead of using upstream runner build
+  scripts.
 - Download and package Node.js 20 and 24 through Bazel, including musl variants
   on Linux. Ship only the Node.js executable and license from each distribution.
 - Move platform-specific Worker process management into a shared process

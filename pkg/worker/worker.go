@@ -104,17 +104,16 @@ type Worker struct {
 	waitErr     error
 	cleanupErr  error
 
-	input       *os.File
-	pipes       []*os.File
-	writes      chan struct{}
-	configFiles []string
+	input  *os.File
+	pipes  []*os.File
+	writes chan struct{}
 
 	pipeErr, killErr, closeErr    error
 	pipeOnce, killOnce, closeOnce sync.Once
 }
 
 // New validates the local configuration and copies its values. It creates no
-// files or processes. Configuration files are materialized only by StartJob.
+// files or processes. Runtime settings are passed in RUNNER_CONFIG by StartJob.
 func New(config Config) (*Worker, error) {
 	if err := config.validate(); err != nil {
 		return nil, err
@@ -166,10 +165,13 @@ func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage) (err err
 			err = w.finish(Unknown, err)
 		}
 	}()
-	if err = w.writeConfigFiles(start); err != nil {
-		return fmt.Errorf("prepare Worker: %w", err)
+	settings, err := w.config.renderRunner()
+	if err != nil {
+		return fmt.Errorf("render Worker settings: %w", err)
 	}
-	env, err := environment(w.config.Dir, w.config.Env)
+	overrides := append([]string{}, w.config.Env...)
+	overrides = append(overrides, "RUNNER_CONFIG="+string(settings))
+	env, err := environment(w.config.Dir, overrides)
 	if err != nil {
 		return fmt.Errorf("prepare Worker environment: %w", err)
 	}
@@ -295,9 +297,9 @@ func (w *Worker) kill() error {
 }
 
 // Close forcibly terminates a still-running process tree, interrupts startup and
-// IPC, waits for reaping and removes created configuration files. It is safe to
-// call repeatedly and concurrently. It leaves pre-existing configuration,
-// workspaces, diagnostics and the installation directory to the caller.
+// IPC and waits for reaping. It is safe to call repeatedly and concurrently.
+// Configuration files, workspaces, diagnostics and the installation belong to
+// the caller.
 func (w *Worker) Close() error {
 	w.closeOnce.Do(func() {
 		w.mu.Lock()
@@ -326,39 +328,10 @@ func (w *Worker) finish(result Result, err error) error {
 		processErr = w.process.Close()
 	}
 	w.closePipes()
-	w.cleanupErr = errors.Join(processErr, w.pipeErr, w.removeConfigFiles())
+	w.cleanupErr = errors.Join(processErr, w.pipeErr)
 	w.result, w.err = result, errors.Join(err, w.cleanupErr)
 	close(w.done)
 	return w.err
-}
-
-func (w *Worker) writeConfigFiles(ctx context.Context) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	data, err := w.config.renderRunner()
-	if err != nil {
-		return fmt.Errorf("render Worker settings: %w", err)
-	}
-	// Exclusive creation rejects symlinks and preserves existing configuration.
-	const name = ".runner"
-	f, err := os.OpenFile(filepath.Join(w.config.Dir, name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	w.configFiles = append(w.configFiles, name)
-	_, err = f.Write(data)
-	return errors.Join(err, f.Close())
-}
-
-func (w *Worker) removeConfigFiles() error {
-	var err error
-	for _, name := range w.configFiles {
-		if e := os.Remove(filepath.Join(w.config.Dir, name)); e != nil && !errors.Is(e, os.ErrNotExist) {
-			err = errors.Join(err, fmt.Errorf("remove Worker file %s: %w", name, e))
-		}
-	}
-	return err
 }
 
 func binaryName() string {

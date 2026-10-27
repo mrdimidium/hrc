@@ -17,12 +17,13 @@ import (
 // Config describes the local runtime, regardless of how the runner is registered.
 type Config struct {
 	// Dir contains the complete runner installation, including bin/Runner.Worker.
-	// It must be dedicated to this invocation. Existing runtime configuration
-	// is never overwritten. The caller owns its workspaces and diagnostics.
+	// It must be dedicated to this invocation. Runtime configuration files are
+	// ignored and left untouched. The caller owns its workspaces and diagnostics.
 	Dir     string
 	WorkDir string
 
 	// Env overrides the inherited environment and the installation's .env file.
+	// RUNNER_CONFIG is reserved and set by Worker.
 	Env []string
 
 	// Name defaults to the hostname. ID and group identify the runner in logs

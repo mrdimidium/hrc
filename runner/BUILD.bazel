@@ -5,9 +5,11 @@ load("@bazel_skylib//rules:select_file.bzl", "select_file")
 load("@rules_dotnet//dotnet:defs.bzl", "csharp_binary", "csharp_library", "publish_binary")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_filegroup", "pkg_files", "strip_prefix")
 load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_test.bzl", "py_test")
 load("@worker_restore//:projects.bzl", "PACKAGES", "PROJECTS")
 
 exports_files([
+    "patch/runtime-config.patch",
     "restore.py",
     "rules_dotnet.patch",
     "runner.bazel",
@@ -194,6 +196,27 @@ publish_binary(
     binary = ":Runner.Worker",
     target_framework = "net8.0",
     self_contained = True,
+    visibility = ["//visibility:public"],
+)
+
+select_file(
+    name = "worker_executable",
+    srcs = ":worker",
+    subpath = select({
+        "@platforms//os:windows": "Runner.Worker.exe",
+        "//conditions:default": "Runner.Worker",
+    }),
+)
+
+py_test(
+    name = "runtime_config_test",
+    size = "small",
+    srcs = ["runtime_config_test.py"],
+    args = ["$(rootpath :worker_executable)"],
+    data = [
+        ":worker",
+        ":worker_executable",
+    ],
     visibility = ["//visibility:public"],
 )
 
