@@ -16,7 +16,7 @@ import (
 
 // Config describes the local runtime, regardless of how the runner is registered.
 type Config struct {
-	// Dir contains the complete runner installation, including bin/Runner.Worker.
+	// Dir contains the complete runner installation, including bin/hrc-worker.
 	// It must be dedicated to this invocation. Runtime configuration files are
 	// ignored and left untouched. The caller owns its workspaces and diagnostics.
 	Dir     string

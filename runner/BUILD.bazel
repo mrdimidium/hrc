@@ -2,26 +2,17 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 load("@bazel_skylib//rules:select_file.bzl", "select_file")
-load("@rules_dotnet//dotnet:defs.bzl", "csharp_binary", "csharp_library", "publish_binary")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_filegroup", "pkg_files", "strip_prefix")
-load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_test.bzl", "py_test")
-load("@worker_restore//:projects.bzl", "PACKAGES", "PROJECTS")
+load("//tools/rules_msbuild:msbuild.bzl", "msbuild_publish")
 
-exports_files([
-    "patch/runtime-config.patch",
-    "patch/diagnostics.patch",
-    "restore.py",
-    "rules_dotnet.patch",
-    "runner.bazel",
-])
+exports_files(["runner.bzl"] + glob(["patch/*.patch"]))
 
 filegroup(
     name = "starlark_sources",
     srcs = [
         "BUILD.bazel",
-        "nuget.bzl",
-        "runner.bazel",
+        "runner.bzl",
     ],
     visibility = ["//visibility:public"],
 )
@@ -110,15 +101,6 @@ pkg_filegroup(
     visibility = ["//visibility:public"],
 )
 
-RESOURCES = {
-    "src/Runner.Worker/action_yaml.json": "GitHub.Runner.Worker.action_yaml.json",
-    "src/Sdk/DTPipelines/workflow-v1.0.json": "GitHub.DistributedTask.Pipelines.ObjectTemplating.workflow-v1.0.json",
-    "src/Sdk/Expressions/Resources/ExpressionResources.resx": "GitHub.Actions.Expressions.ExpressionResources.resources",
-    "src/Sdk/WorkflowParser/ObjectTemplating/TemplateStrings.resx": "GitHub.Actions.WorkflowParser.ObjectTemplating.TemplateStrings.resources",
-    "src/Sdk/WorkflowParser/WorkflowStrings.resx": "GitHub.Actions.WorkflowParser.WorkflowStrings.resources",
-    "src/Sdk/WorkflowParser/workflow-v1.0.json": "GitHub.Actions.WorkflowParser.workflow-v1.0.json",
-}
-
 RID = select({
     "@platforms//os:linux": "linux",
     "@platforms//os:osx": "osx",
@@ -128,79 +110,36 @@ RID = select({
     "@platforms//cpu:x86_64": "x64",
 })
 
-DEFINES = ["TRACE"] + select({
-    "@platforms//os:linux": ["OS_LINUX"],
-    "@platforms//os:osx": ["OS_OSX"],
-    "@platforms//os:windows": ["OS_WINDOWS"],
-}) + select({
-    "@platforms//cpu:aarch64": ["ARM64"],
-    "@platforms//cpu:x86_64": ["X64"],
-})
-
-PROJECT_RESOURCES = {
-    project: [name for path, name in RESOURCES.items() if path.startswith("src/" + project + "/")]
-    for project in PROJECTS
-}
-
-py_binary(
-    name = "build_inputs_tool",
-    srcs = ["build_inputs.py"],
-    main = "build_inputs.py",
-)
-
-genrule(
-    name = "worker_inputs",
-    srcs = ["@actions_runner//:src/runnerversion"] + ["@actions_runner//:" + path for path in RESOURCES],
-    outs = [
-        "inputs/AssemblyInfo.cs",
-        "inputs/BuildConstants.cs",
-    ] + ["inputs/" + name for name in RESOURCES.values()],
-    cmd = '"$(execpath :build_inputs_tool)" "$(DOTNET_BIN)" "$(execpath @actions_runner//:src/runnerversion)" ' + RID +
-          ' "$(execpath inputs/BuildConstants.cs)" "$(execpath inputs/AssemblyInfo.cs)"' +
-          "".join([' "$(execpath @actions_runner//:%s)" "$(execpath inputs/%s)"' % (path, name) for path, name in RESOURCES.items()]),
-    toolchains = ["@rules_dotnet//dotnet:resolved_toolchain"],
-    tools = [
-        ":build_inputs_tool",
-        "@rules_dotnet//dotnet:resolved_toolchain",
-    ],
-)
-
-[
-    (csharp_binary if project == "Runner.Worker" else csharp_library)(
-        name = project,
-        srcs = [
-            "@actions_runner//:" + project + "_sources",
-            ":inputs/AssemblyInfo.cs",
-        ] + ([":inputs/BuildConstants.cs"] if project == "Runner.Sdk" else []),
-        deps = ["@worker_nuget//" + package for package in PACKAGES[project]] + [":" + dependency for dependency in PROJECTS[project]],
-        compile_data = [":inputs/" + name for name in PROJECT_RESOURCES[project]],
-        compiler_options = ["/resource:$(execpath :inputs/%s),%s" % (name, name) for name in PROJECT_RESOURCES[project]],
-        defines = ["TRACE"] if project == "Sdk" else DEFINES,
-        out = project,
-        target_frameworks = ["net8.0"],
-        allow_unsafe_blocks = project == "Sdk",
-        generate_documentation_file = False,
-        langversion = "11.0" if project == "Sdk" else "12.0",
-        nowarn = [
-            "CS1701",
-            "CS1702",
-            "SYSLIB0050",
-            "SYSLIB0051",
-        ],
-        treat_warnings_as_errors = True,
-    )
-    for project in PROJECTS
-]
-
 config_setting(
     name = "bundled_dotnet",
     flag_values = {"//:bundled-dotnet": "true"},
 )
 
-publish_binary(
+msbuild_publish(
     name = "worker",
-    binary = ":Runner.Worker",
-    target_framework = "net8.0",
+    srcs = ["@actions_runner//:msbuild_sources"],
+    packages = ["@msbuild_feed//:packages"],
+    project = "Runner.Worker/Runner.Worker.csproj",
+    assembly_name = "Runner.Worker",
+    binary_name = "hrc-worker",
+    staged_files = {"@actions_runner//:build_constants": "Runner.Sdk/BuildConstants.cs"},
+    properties = select({
+        ":externals_files_" + platform: {
+            "BUILD_OS": {
+                "darwin": "OSX",
+                "linux": "Linux",
+                "win": "Windows",
+            }[os],
+            "PackageRuntime": {
+                "darwin": "osx",
+                "linux": "linux",
+                "win": "win",
+            }[os] + "-" + arch,
+        }
+        for platform, (os, arch) in NODE_PLATFORMS.items()
+    }),
+    version = "@actions_runner//:runnerversion",
+    rid = RID,
     self_contained = select({
         ":bundled_dotnet": True,
         "//conditions:default": False,
@@ -208,24 +147,12 @@ publish_binary(
     visibility = ["//visibility:public"],
 )
 
-select_file(
-    name = "worker_executable",
-    srcs = ":worker",
-    subpath = select({
-        "@platforms//os:windows": "Runner.Worker.exe",
-        "//conditions:default": "Runner.Worker",
-    }),
-)
-
 py_test(
     name = "runtime_config_test",
     size = "small",
     srcs = ["runtime_config_test.py"],
-    args = ["$(rootpath :worker_executable)"],
-    data = [
-        ":worker",
-        ":worker_executable",
-    ],
+    args = ["$(rootpath :worker)"],
+    data = [":worker"],
     visibility = ["//visibility:public"],
 )
 
@@ -233,21 +160,10 @@ pkg_files(
     name = "worker_files",
     srcs = [":worker"],
     prefix = "runner/bin",
-    strip_prefix = select({
-        ":externals_files_" + os + "_" + arch: strip_prefix.from_pkg("worker/publish/" + {
-            "darwin": "osx",
-            "linux": "linux",
-            "win": "win",
-        }[os] + "-" + arch)
-        for os in [
-            "linux",
-            "darwin",
-            "win",
-        ]
-        for arch in [
-            "x64",
-            "arm64",
-        ]
+    strip_prefix = strip_prefix.files_only(),
+    renames = select({
+        "@platforms//os:windows": {":worker": "hrc-worker.exe"},
+        "//conditions:default": {":worker": "hrc-worker"},
     }),
     attributes = pkg_attributes(mode = "0755"),
 )
@@ -255,22 +171,22 @@ pkg_files(
 pkg_files(
     name = "worker_scripts",
     srcs = [
-        "@actions_runner//:src/Misc/layoutbin/hashFiles/index.js",
-        "@actions_runner//:src/Misc/layoutbin/macos-run-invoker.js",
+        "@actions_runner//:Misc/layoutbin/hashFiles/index.js",
+        "@actions_runner//:Misc/layoutbin/macos-run-invoker.js",
     ],
     prefix = "runner/bin",
-    strip_prefix = strip_prefix.from_root("src/Misc/layoutbin"),
+    strip_prefix = strip_prefix.from_root("Misc/layoutbin"),
 )
 
 pkg_files(
     name = "worker_metadata",
     srcs = [
-        "@actions_runner//:LICENSE",
-        "@actions_runner//:src/runnerversion",
+        "@actions_runner//:runnerversion",
+        "@actions_runner_license//file",
     ],
     prefix = "runner",
     strip_prefix = strip_prefix.files_only(),
-    renames = {"@actions_runner//:src/runnerversion": "VERSION"},
+    renames = {"@actions_runner//:runnerversion": "VERSION"},
 )
 
 pkg_filegroup(

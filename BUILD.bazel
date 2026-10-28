@@ -54,6 +54,7 @@ filegroup(
         "//runner:starlark_sources",
         "//tools:starlark_sources",
         "//tools/format:BUILD.bazel",
+        "//tools/rules_msbuild:starlark_sources",
         "//tools/rules_service:starlark_sources",
     ],
     tags = [

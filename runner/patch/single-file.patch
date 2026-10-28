@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+diff --git a/src/Runner.Common/HostContext.cs b/src/Runner.Common/HostContext.cs
+--- a/src/Runner.Common/HostContext.cs
++++ b/src/Runner.Common/HostContext.cs
+@@ -137,7 +137,7 @@
+                 }
+ 
+                 // this should give us _diag folder under runner root directory
+-                string diagLogDirectory = Environment.GetEnvironmentVariable("RUNNER_DIAG") ?? Path.Combine(new DirectoryInfo(Path.GetDirectoryName(Assembly.GetEntryAssembly().Location)).Parent.FullName, Constants.Path.DiagDirectory);
++                string diagLogDirectory = Environment.GetEnvironmentVariable("RUNNER_DIAG") ?? Path.Combine(new DirectoryInfo(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar)).Parent.FullName, Constants.Path.DiagDirectory);
+                 _traceManager = new TraceManager(new HostTraceListener(diagLogDirectory, hostType, logPageSize, logRetentionDays), stdoutTraceListener, this.SecretMasker);
+             }
+             else
+@@ -378,7 +378,7 @@
+             switch (directory)
+             {
+                 case WellKnownDirectory.Bin:
+-                    path = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
++                    path = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+                     break;
+ 
+                 case WellKnownDirectory.Diag:
+diff --git a/src/Runner.Worker/Expressions/HashFilesFunction.cs b/src/Runner.Worker/Expressions/HashFilesFunction.cs
+--- a/src/Runner.Worker/Expressions/HashFilesFunction.cs
++++ b/src/Runner.Worker/Expressions/HashFilesFunction.cs
+@@ -67,7 +67,7 @@
+             context.Trace.Info($"Search root directory: '{githubWorkspace}'");
+             context.Trace.Info($"Search pattern: '{string.Join(", ", patterns)}'");
+ 
+-            string binDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
++            string binDir = AppContext.BaseDirectory;
+             string runnerRoot = new DirectoryInfo(binDir).Parent.FullName;
+ 
+             string node = Path.Combine(runnerRoot, "externals", NodeUtil.GetInternalNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");
+@@ -200,7 +200,7 @@
+             context.Trace.Info($"Search root directory: '{githubWorkspace}'");
+             context.Trace.Info($"Search pattern: '{string.Join(", ", patterns)}'");
+ 
+-            string binDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
++            string binDir = AppContext.BaseDirectory;
+             string runnerRoot = new DirectoryInfo(binDir).Parent.FullName;
+ 
+             string node = Path.Combine(runnerRoot, "externals", NodeUtil.GetInternalNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");

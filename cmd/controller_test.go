@@ -408,7 +408,7 @@ func TestControllerJobLifecycle(t *testing.T) {
 }
 
 func TestControllerRejectsUnsafeJIT(t *testing.T) {
-	for _, name := range []string{"../escape", "bin/Runner.Worker", ".env"} {
+	for _, name := range []string{"../escape", "bin/hrc-worker", ".env"} {
 		files, _ := json.Marshal(map[string]string{name: base64.StdEncoding.EncodeToString([]byte("x"))})
 		if _, err := parseRunnerRegistration(base64.StdEncoding.EncodeToString(files)); err == nil {
 			t.Errorf("accepted %q", name)
@@ -827,9 +827,9 @@ func TestRunRetriesSessionWithoutInterruptingRunners(t *testing.T) {
 
 func workerBinary() string {
 	if runtime.GOOS == "windows" {
-		return "Runner.Worker.exe"
+		return "hrc-worker.exe"
 	}
-	return "Runner.Worker"
+	return "hrc-worker"
 }
 
 func testRunnerOS() string {

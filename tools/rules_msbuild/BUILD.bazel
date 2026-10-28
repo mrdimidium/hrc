@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+load("@rules_python//python:py_binary.bzl", "py_binary")
+
+py_binary(
+    name = "publish",
+    srcs = ["publish.py"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "starlark_sources",
+    srcs = glob(["*.bzl"]) + ["BUILD.bazel"],
+    visibility = ["//visibility:public"],
+)

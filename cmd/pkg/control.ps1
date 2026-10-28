@@ -76,7 +76,7 @@ if ($Action -eq 'remove') {
     return
 }
 
-foreach ($file in @('hrc.exe', 'control.ps1', 'TARGET', 'runner/VERSION', 'runner/LICENSE', 'runner/bin/Runner.Worker.exe', 'runner/bin/hashFiles/index.js', 'runner/externals/node24/bin/node.exe', 'hrc.json', 'services/hrc.winsw.xml')) {
+foreach ($file in @('hrc.exe', 'control.ps1', 'TARGET', 'runner/VERSION', 'runner/LICENSE', 'runner/bin/hrc-worker.exe', 'runner/bin/hashFiles/index.js', 'runner/externals/node24/bin/node.exe', 'hrc.json', 'services/hrc.winsw.xml')) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $file) -PathType Leaf)) {
         throw "Incomplete archive: missing $file"
     }
