@@ -22,7 +22,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"gilti.dev/hrc/pkg/process"
+	"gilti.dev/hrc/internal/process"
 )
 
 // Result uses the upstream TaskResult values. Unknown means the process never

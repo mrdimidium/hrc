@@ -16,8 +16,8 @@ go_library(
     importpath = "gilti.dev/hrc/cmd",
     visibility = ["//:__pkg__"],  # keep
     deps = [
-        "//pkg/listener",
-        "//pkg/worker",
+        "//internal/listener",
+        "//internal/worker",
         "@com_github_actions_scaleset//:scaleset",
     ] + select({
         "@rules_go//go/platform:darwin": [
@@ -48,8 +48,8 @@ go_test(
     srcs = glob(["*_test.go"]),  # keep
     embed = [":cmd_lib"],
     deps = [
-        "//pkg/listener",
-        "//pkg/worker",
+        "//internal/listener",
+        "//internal/worker",
         "@com_github_actions_scaleset//:scaleset",
     ],
 )

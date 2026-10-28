@@ -18,8 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gilti.dev/hrc/pkg/listener"
-	"gilti.dev/hrc/pkg/worker"
+	"gilti.dev/hrc/internal/listener"
+	"gilti.dev/hrc/internal/worker"
 
 	"github.com/actions/scaleset"
 )

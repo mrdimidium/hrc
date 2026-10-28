@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 
-	"gilti.dev/hrc/pkg/listener"
-	"gilti.dev/hrc/pkg/worker"
+	"gilti.dev/hrc/internal/listener"
+	"gilti.dev/hrc/internal/worker"
 )
 
 type runnerSettings struct {

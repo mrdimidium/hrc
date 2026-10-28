@@ -32,9 +32,9 @@ test_suite(
     name = "tests",
     tests = [
         "//cmd:cmd_test",
-        "//pkg/listener:listener_test",
-        "//pkg/process:process_test",
-        "//pkg/worker:worker_test",
+        "//internal/listener:listener_test",
+        "//internal/process:process_test",
+        "//internal/worker:worker_test",
         "//runner:runtime_config_test",
     ],
 )
@@ -48,9 +48,9 @@ filegroup(
         "MODULE.bazel",
     ] + [
         "//cmd:BUILD.bazel",
-        "//pkg/listener:BUILD.bazel",
-        "//pkg/process:BUILD.bazel",
-        "//pkg/worker:BUILD.bazel",
+        "//internal/listener:BUILD.bazel",
+        "//internal/process:BUILD.bazel",
+        "//internal/worker:BUILD.bazel",
         "//runner:starlark_sources",
         "//tools:starlark_sources",
         "//tools/format:BUILD.bazel",

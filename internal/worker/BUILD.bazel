@@ -6,22 +6,19 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 exports_files(["BUILD.bazel"])
 
 go_library(
-    name = "listener",
+    name = "worker",
     srcs = glob(
         ["*.go"],
         exclude = ["*_test.go"],
     ),
-    importpath = "gilti.dev/hrc/pkg/listener",
+    importpath = "gilti.dev/hrc/internal/worker",
     visibility = ["//visibility:public"],
-    deps = [
-        "@org_golang_x_oauth2//:oauth2",
-        "@org_golang_x_oauth2//clientcredentials",
-    ],
+    deps = ["//internal/process"],
 )
 
 go_test(
-    name = "listener_test",
+    name = "worker_test",
     size = "small",
     srcs = glob(["*_test.go"]),
-    embed = [":listener"],
+    embed = [":worker"],
 )
