@@ -7,8 +7,8 @@ for a small fleet of build hosts.
 Each machine is an independent `hrc` host running a daemon with a declarative
 config. By design, `hrc` does not form clusters, communicate with other hosts,
 or persist controller state. As jobs arrive, the daemon starts ephemeral runners
-with separate installations and workspaces, then cleans them up when they
-finish. Jobs run directly on the host, while installed tools and shared caches
+with a shared, read-only runtime and separate workspaces, then cleans them up
+when they finish. Jobs run directly on the host, while installed tools and shared caches
 persist between builds.
 
 Although ephemeral build environments offer many advantages, stateful build
@@ -54,7 +54,7 @@ sudo ./control install
 # Upgrade: run from a newly extracted release archive.
 sudo ./control install
 
-# Uninstall (configuration, secrets, runner versions and build data are retained).
+# Uninstall (configuration, secrets, old runner versions and build data are retained).
 sudo ./control remove
 ```
 
@@ -86,7 +86,7 @@ Start-Service hrc
 # Upgrade: run from a newly extracted release archive.
 .\control.ps1 install -WinSWPath C:\Downloads\WinSW-x64.exe
 
-# Uninstall (configuration, secrets, runner versions and build data are retained).
+# Uninstall (configuration, secrets, old runner versions and build data are retained).
 .\control.ps1 remove
 ```
 

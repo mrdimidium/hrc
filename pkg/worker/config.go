@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,14 +17,15 @@ import (
 
 // Config describes the local runtime, regardless of how the runner is registered.
 type Config struct {
-	// Dir contains the complete runner installation, including bin/hrc-worker.
-	// It must be dedicated to this invocation. Runtime configuration files are
-	// ignored and left untouched. The caller owns its workspaces and diagnostics.
+	// Path selects the hrc-worker executable. A bare name is resolved through PATH.
+	// Dir contains shared scripts/ and externals/ resources and an optional .env.
+	// WorkDir is the job's private working directory and the process cwd.
+	Path    string
 	Dir     string
 	WorkDir string
 
 	// Env overrides the inherited environment and the installation's .env file.
-	// RUNNER_CONFIG and RUNNER_DIAG are reserved and set by Worker.
+	// RUNNER_CONFIG, RUNNER_DIAG, RUNNER_SCRIPTS and RUNNER_EXTERNALS are reserved.
 	Env []string
 
 	// Name defaults to the hostname. ID and group identify the runner in logs
@@ -68,7 +70,18 @@ func (c *Config) validate() error {
 		return err
 	}
 
-	info, err := os.Stat(filepath.Join(c.Dir, "bin", binaryName()))
+	if c.Path == "" {
+		return errors.New("Worker executable is required")
+	}
+	c.Path, err = exec.LookPath(c.Path)
+	if err != nil {
+		return fmt.Errorf("find Worker executable: %w", err)
+	}
+	c.Path, err = filepath.Abs(c.Path)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(c.Path)
 	if err != nil {
 		return fmt.Errorf("find Worker binary: %w", err)
 	}
@@ -88,7 +101,11 @@ func (c *Config) validate() error {
 		}
 	}
 	if c.WorkDir == "" {
-		c.WorkDir = "_work"
+		c.WorkDir = "."
+	}
+	c.WorkDir, err = filepath.Abs(c.WorkDir)
+	if err != nil {
+		return err
 	}
 	if c.HostedServer != nil {
 		hosted := *c.HostedServer
@@ -122,7 +139,7 @@ func (c *Config) renderRunner() ([]byte, error) {
 		DisableUpdate        bool   `json:"disableUpdate,omitempty"`
 	}{
 		AgentID: c.ID, AgentName: c.Name, PoolID: c.GroupID, PoolName: c.GroupName,
-		WorkFolder: c.WorkDir, GitHubURL: c.GitHubURL, ServerURL: c.ServerURL,
+		WorkFolder: ".", GitHubURL: c.GitHubURL, ServerURL: c.ServerURL,
 		ServerURLV2: c.ServerURLV2, HostedServer: c.HostedServer,
 		MonitorSocketAddress: c.MonitorSocket, DisableUpdate: c.DisableUpdate,
 	})

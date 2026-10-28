@@ -309,6 +309,7 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 		t.Fatal(err)
 	}
 	localConfig := registration.workerConfig(dir, false)
+	localConfig.Path = filepath.Join(dir, "bin", workerBinary())
 	localConfig.Env = []string{"WORKER_ENV=override", "WORKER_TEST_MODE=" + mode}
 	localConfig.Stdout, localConfig.Stderr = io.Discard, io.Discard
 	local, err := worker.New(localConfig)
@@ -445,7 +446,7 @@ func TestServerRunRunnerUsesWorker(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(worker.dir, ".env"), []byte(env), 0600); err != nil {
 				t.Fatal(err)
 			}
-			cfg := &Config{Id: "host", DirBuilds: t.TempDir(), DirLogs: t.TempDir()}
+			cfg := &Config{Id: "host", PathWorker: filepath.Join(worker.dir, "bin", workerBinary()), DirBuilds: t.TempDir(), DirLogs: t.TempDir()}
 			var api *httptest.Server
 			api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
@@ -460,7 +461,7 @@ func TestServerRunRunnerUsesWorker(t *testing.T) {
 				case "/_apis/runtime/runnerscalesets/7/generatejitconfig":
 					var settings map[string]any
 					json.NewDecoder(r.Body).Decode(&settings)
-					if settings["workFolder"] != "_work" || !strings.HasPrefix(fmt.Sprint(settings["name"]), "host-runner-") {
+					if settings["workFolder"] != "." || !strings.HasPrefix(fmt.Sprint(settings["name"]), "host-runner-") {
 						t.Errorf("bad JIT settings: %v", settings)
 					}
 					if mode == "jiterror" {
@@ -550,9 +551,9 @@ func TestServerRunRunnerReusesDirectory(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cfg := &Config{Id: "host", DirBuilds: t.TempDir(), DirLogs: t.TempDir()}
+	cfg := &Config{Id: "host", PathWorker: filepath.Join(runner.dir, "bin", workerBinary()), DirBuilds: t.TempDir(), DirLogs: t.TempDir()}
 	dirs := newDirPool(cfg.DirBuilds, "smoke")
-	cached := filepath.Join(cfg.DirBuilds, "smoke-1", "_work", "cache")
+	cached := filepath.Join(cfg.DirBuilds, "smoke-1", "cache")
 	for job := range 2 {
 		if err := runRunner(ctx, client, 7, cfg, runner.dir, dirs); err != nil {
 			t.Fatalf("job %d: %v", job, err)
@@ -800,7 +801,7 @@ func TestRunRetriesSessionWithoutInterruptingRunners(t *testing.T) {
 		}
 		cancel()
 	}()
-	cfg := &Config{Id: "host", DirBuilds: t.TempDir(), DirLogs: t.TempDir(), DirRunner: runner.dir}
+	cfg := &Config{Id: "host", PathWorker: filepath.Join(runner.dir, "bin", workerBinary()), DirBuilds: t.TempDir(), DirLogs: t.TempDir(), DirRunner: runner.dir}
 	group := &Group{Url: api.URL + "/org", Name: "smoke", Group: scaleset.DefaultRunnerGroup, Token: Secret{Src: "inline", Value: "pat"}}
 	if err := run(ctx, cfg, group, newSlots(1)); err != nil {
 		t.Fatalf("session failures must be retried: %v", err)

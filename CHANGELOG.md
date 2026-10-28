@@ -10,12 +10,19 @@ Notable changes to hrc, in the format of
 
 - Update the bundled GitHub Actions runner from 2.338.0 to 2.338.2 and Node.js
   24 from 24.21.0 to 24.22.1.
-- Pass Worker settings through `RUNNER_CONFIG` instead of writing a `.runner`
-  file.
-- Keep Worker diagnostics under `dirLogs/jobs/<jobId>`, one for job. Logs
-  survive temporary workspace removal and slot reuse. Log retention is managed
-  by the administrator.
 - Supports building without a bundled .NET runtime.
+- Separate the shared Worker runtime from per-job state:
+  - Install `hrc-worker` beside `hrc` and share read-only resources across jobs
+    instead of copying the runtime into each slot. Refresh the runtime on every
+    upgrade, even at the same upstream version.
+  - Pass Worker settings through `RUNNER_CONFIG` instead of writing a `.runner`
+    file.
+  - Keep diagnostics under `dirLogs/jobs/<jobId>`, one directory per job. Logs
+    survive temporary workspace removal and slot reuse; retention is managed
+    by the administrator.
+  - Use each slot as the work root without a nested `_work` directory.
+  - Existing configs require `pathWorker` and `dirRunner` updates; old
+    installations and workspaces are retained for manual migration.
 
 ## [0.2.0] - 2026-10-27
 

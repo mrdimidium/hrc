@@ -196,15 +196,18 @@ type Config struct {
 	Quota   Resources `json:"quota"`
 	Reserve Resources `json:"reserve"`
 
-	DirBin    string `json:"dirBin"`
-	DirBuilds string `json:"dirBuilds"`
-	DirLogs   string `json:"dirLogs"`
-	DirRunner string `json:"dirRunner"`
+	PathWorker string `json:"pathWorker"`
+	DirBuilds  string `json:"dirBuilds"`
+	DirLogs    string `json:"dirLogs"`
+	DirRunner  string `json:"dirRunner"`
 }
 
 func (c *Config) defaults() {
-	if c.DirBin == "" {
-		c.DirBin = "./hrc/bin"
+	if c.PathWorker == "" {
+		c.PathWorker = "./hrc-worker"
+	}
+	if c.DirRunner == "" {
+		c.DirRunner = "./runner"
 	}
 	if c.DirBuilds == "" {
 		c.DirBuilds = "./hrc/build"

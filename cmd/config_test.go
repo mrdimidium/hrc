@@ -95,12 +95,12 @@ func TestConfigValidate(t *testing.T) {
 	checkError(t, cfg.Validate(), "id is required")
 	cfg.Id = "test-host"
 	checkError(t, cfg.Validate(), "")
-	if cfg.DirBin != "./hrc/bin" || cfg.DirBuilds != "./hrc/build" || cfg.DirLogs != "./hrc/log" {
+	if cfg.PathWorker != "./hrc-worker" || cfg.DirRunner != "./runner" || cfg.DirBuilds != "./hrc/build" || cfg.DirLogs != "./hrc/log" {
 		t.Fatalf("unexpected default directories: %+v", cfg)
 	}
-	cfg.DirBin, cfg.DirBuilds, cfg.DirRunner, cfg.DirLogs = "/bin", "/builds", "/runner", "/logs"
+	cfg.PathWorker, cfg.DirBuilds, cfg.DirRunner, cfg.DirLogs = "/bin/hrc-worker", "/builds", "/runner", "/logs"
 	checkError(t, cfg.Validate(), "")
-	if cfg.DirBin != "/bin" || cfg.DirBuilds != "/builds" || cfg.DirRunner != "/runner" || cfg.DirLogs != "/logs" {
+	if cfg.PathWorker != "/bin/hrc-worker" || cfg.DirBuilds != "/builds" || cfg.DirRunner != "/runner" || cfg.DirLogs != "/logs" {
 		t.Fatalf("custom directories changed: %+v", cfg)
 	}
 	cfg.Groups = []Group{
@@ -136,7 +136,7 @@ func TestLoadConfig(t *testing.T) {
 			}
 			cfg, err := LoadConfig(path)
 			checkError(t, err, tt.want)
-			if tt.want == "" && (cfg.Id != "host" || len(cfg.Groups) != 1 || cfg.DirBin != "./hrc/bin" || cfg.DirBuilds != "./hrc/build") {
+			if tt.want == "" && (cfg.Id != "host" || len(cfg.Groups) != 1 || cfg.PathWorker != "./hrc-worker" || cfg.DirBuilds != "./hrc/build") {
 				t.Fatalf("unexpected config: %+v", cfg)
 			}
 			if tt.want == "" && cfg.Groups[0].Group != "default" {

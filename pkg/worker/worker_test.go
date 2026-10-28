@@ -39,7 +39,7 @@ func workerProcessTestChild() int {
 	defer input.Close()
 	// macOS may resolve /var to /private/var; compare directories, not paths.
 	cwd, err := os.Stat(".")
-	want, wantErr := os.Stat(filepath.Join(os.Getenv("HRC_WORKER_TEST_DIR"), "bin"))
+	want, wantErr := os.Stat(os.Getenv("HRC_WORKER_TEST_DIR"))
 	if err != nil || wantErr != nil || !os.SameFile(cwd, want) {
 		return 21
 	}
@@ -164,7 +164,7 @@ func workerTestConfig(t *testing.T, mode string, count int) (Config, *workerProc
 	}
 	output := &workerProcessTestOutput{ready: make(chan struct{})}
 	env := []string{"HRC_WORKER_PROCESS_TEST=1", "HRC_WORKER_TEST_DIR=" + dir, "HRC_WORKER_TEST_MODE=" + mode, "HRC_WORKER_TEST_COUNT=" + strconv.Itoa(count)}
-	return Config{Dir: dir, Env: env, Stdout: output, Stderr: output}, output
+	return Config{Path: filepath.Join(dir, "bin", binaryName()), Dir: dir, WorkDir: dir, Env: env, Stdout: output, Stderr: output}, output
 }
 
 func workerProcessTestJob(index int) []byte {
@@ -343,7 +343,7 @@ func TestWorkerFilesAndEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	for key, want := range map[string]any{
-		"agentName": "test-runner", "agentId": float64(7), "workFolder": "_work",
+		"agentName": "test-runner", "agentId": float64(7), "workFolder": ".",
 		"poolId": float64(3), "poolName": "test-group",
 		"gitHubUrl": "https://github.example/org", "IsHostedServer": false,
 		"serverUrl": "https://pipelines.example/", "serverUrlV2": "https://broker.example/",
@@ -565,7 +565,7 @@ func TestWorkerSymlinkDirectory(t *testing.T) {
 	if err := os.Symlink(config.Dir, link); err != nil {
 		t.Skipf("cannot create a symlink: %v", err)
 	}
-	config.Dir = link
+	config.Dir, config.WorkDir = link, link
 	// Force Getwd to resolve the physical path, as it does for /var on macOS.
 	config.Env = append(config.Env, "HRC_WORKER_TEST_DIR="+link, "PWD=")
 	w := newTestWorker(t, config)

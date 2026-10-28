@@ -30,7 +30,8 @@ if [ "$action" = remove ]; then
     export SERVICE_INIT
     select_init
     sh "$payload/scripts/preremove.sh" remove
-    rm -f "$binary" "$service"
+    rm -f "$binary" "$prefix/bin/hrc-worker" "$service"
+    rm -rf "$prefix/lib/hrc"
     sh "$payload/scripts/postremove.sh" remove
     for hook in preinstall postinstall preremove postremove; do
         rm -f "$payload/scripts/$hook.sh"
@@ -56,7 +57,7 @@ arch=$(arch)
 }
 select_init
 export SERVICE_INIT="$init"
-for file in hrc control TARGET hrc.json \
+for file in hrc hrc-worker control TARGET hrc.json \
     scripts/preinstall.sh scripts/postinstall.sh \
     scripts/preremove.sh scripts/postremove.sh "services/$service_source"; do
     [ -f "$bundle/$file" ] && [ -r "$bundle/$file" ] || {
@@ -72,7 +73,7 @@ if [ -f "$payload/INIT" ]; then
     }
 fi
 
-for file in VERSION LICENSE bin/hrc-worker bin/hashFiles/index.js externals/node24/bin/node; do
+for file in VERSION LICENSE scripts/hashFiles.js scripts/macosRunInvoker.js externals/node24/bin/node; do
     [ -r "$bundle/runner/$file" ] || {
         echo "hrc: incomplete release archive: missing runner/$file" >&2; exit 1
     }
@@ -81,38 +82,37 @@ IFS= read -r runner_version < "$bundle/runner/VERSION"
 if ! expr "$runner_version" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null; then
     echo 'hrc: invalid bundled runner version' >&2; exit 1
 fi
-runner_bin="$state_dir/bin"
-runner="$runner_bin/github-bundled-$runner_version"
-if [ -e "$runner" ] || [ -L "$runner" ]; then
-    [ -f "$runner/.complete" ] && [ "$(cat "$runner/VERSION")" = "$runner_version" ] || {
-        echo "hrc: incomplete runner installation: $runner" >&2; exit 1
-    }
-fi
+runner="$prefix/lib/hrc"
 sh "$bundle/scripts/preinstall.sh" install
 install_dir 0755 root "$admin_group" "$prefix/bin"
 install_dir 0755 root "$admin_group" "$payload"
 install_dir 0755 root "$admin_group" "$payload/scripts"
 install_dir 0755 root "$admin_group" "$(dirname "$service")"
 
-# Publish a writable versioned installation; never replace a runner in use.
-install_dir 0700 hrc hrc "$runner_bin"
-if [ ! -e "$runner" ]; then
-    runner_temporary="$runner.install.$$"
-    trap 'rm -rf "$runner_temporary"' 0
-    trap 'exit 1' 1 2 15
-    mkdir "$runner_temporary"
-    cp -R "$bundle/runner/." "$runner_temporary/"
-    : > "$runner_temporary/.complete"
-    chmod -R u=rwX,go= "$runner_temporary"
-    chown -R hrc:hrc "$runner_temporary"
-    mv "$runner_temporary" "$runner"
-    trap - 0 1 2 15
+# The preinstall hook stopped the service. Replace resources on every upgrade,
+# even when upstream's VERSION is unchanged: local patches may have changed.
+install_dir 0755 root "$admin_group" "$prefix/lib"
+runner_temporary="$runner.install.$$"
+runner_previous="$runner.previous.$$"
+trap 'if [ ! -e "$runner" ] && [ -e "$runner_previous" ]; then mv "$runner_previous" "$runner"; fi; rm -rf "$runner_temporary"' 0
+trap 'exit 1' 1 2 15
+mkdir "$runner_temporary"
+cp -R "$bundle/runner/." "$runner_temporary/"
+chmod -R u=rwX,go=rX "$runner_temporary"
+chown -R root:"$admin_group" "$runner_temporary"
+if [ -e "$runner" ] || [ -L "$runner" ]; then
+    mv "$runner" "$runner_previous"
 fi
-# Record the selected version after its installation is complete.
-runner_version_file="$runner_bin/VERSION"
-printf '%s\n' "$runner_version" > "$runner_version_file"
-chmod 0600 "$runner_version_file"
-chown hrc:hrc "$runner_version_file"
+mv "$runner_temporary" "$runner"
+rm -rf "$runner_previous"
+trap - 0 1 2 15
+worker_binary="$prefix/bin/hrc-worker"
+temporary="$worker_binary.new.$$"
+trap 'rm -f "$temporary"' 0
+trap 'exit 1' 1 2 15
+install_file 0755 "$bundle/hrc-worker" "$temporary"
+mv -f "$temporary" "$worker_binary"
+trap - 0 1 2 15
 install_file 0755 "$bundle/control" "$payload/control"
 install_file 0644 "$bundle/TARGET" "$payload/TARGET"
 for hook in preinstall postinstall preremove postremove; do
@@ -134,10 +134,21 @@ if [ ! -e "$config" ] && [ ! -L "$config" ]; then
     temporary="$config.new.$$"
     trap 'rm -f "$temporary"' 0
     trap 'exit 1' 1 2 15
-    sed "s|\"dirLogs\": \"\"|\"dirLogs\": \"$log_dir\"|" "$bundle/hrc.json" > "$temporary"
+    # Escape JSON strings and then sed replacement metacharacters.
+    json_sed_value() {
+        printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/[\\&|]/\\&/g'
+    }
+    worker_value=$(json_sed_value "$worker_binary")
+    runner_value=$(json_sed_value "$runner")
+    log_value=$(json_sed_value "$log_dir")
+    sed -e "s|\"pathWorker\": \"\"|\"pathWorker\": \"$worker_value\"|" \
+        -e "s|\"dirRunner\": \"\"|\"dirRunner\": \"$runner_value\"|" \
+        -e "s|\"dirLogs\": \"\"|\"dirLogs\": \"$log_value\"|" "$bundle/hrc.json" > "$temporary"
     install_file 0640 "$temporary" "$config"
     rm -f "$temporary"
     trap - 0 1 2 15
+elif ! grep -q '"pathWorker"[[:space:]]*:' "$config"; then
+    echo "hrc: existing config retained; before starting, set pathWorker to $worker_binary and dirRunner to $runner" >&2
 fi
 sh "$bundle/scripts/postinstall.sh" install
 echo "hrc: installed; removal command: $payload/control remove"

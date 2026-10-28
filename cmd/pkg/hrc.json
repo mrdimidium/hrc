@@ -1,6 +1,7 @@
 {
   "id": "build-01",
-  "dirBin": "bin",
+  "pathWorker": "",
+  "dirRunner": "",
   "dirBuilds": "jobs",
   "dirLogs": "",
   "groups": [

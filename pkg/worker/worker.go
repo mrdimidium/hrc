@@ -134,7 +134,7 @@ func New(config Config) (*Worker, error) {
 // Initial transmission is also bounded by .NET's 30-second startup timeout.
 // Once startup begins, failures consume this Worker and release its resources.
 // diagDir selects the diagnostic directory for this job. An empty path uses
-// the installation's _diag directory; relative paths use the caller's cwd.
+// workspace's _diag directory; relative paths use the caller's cwd.
 func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage, diagDir string) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -168,18 +168,25 @@ func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage, diagDir 
 		}
 	}()
 	if diagDir == "" {
-		diagDir = filepath.Join(w.config.Dir, "_diag")
+		diagDir = filepath.Join(w.config.WorkDir, "_diag")
 	}
 	diagDir, err = filepath.Abs(diagDir)
 	if err != nil {
 		return fmt.Errorf("resolve Worker diagnostics: %w", err)
+	}
+	if err := os.MkdirAll(w.config.WorkDir, 0700); err != nil {
+		return fmt.Errorf("create Worker workspace: %w", err)
 	}
 	settings, err := w.config.renderRunner()
 	if err != nil {
 		return fmt.Errorf("render Worker settings: %w", err)
 	}
 	overrides := append([]string{}, w.config.Env...)
-	overrides = append(overrides, "RUNNER_CONFIG="+string(settings), "RUNNER_DIAG="+diagDir)
+	overrides = append(overrides,
+		"RUNNER_CONFIG="+string(settings), "RUNNER_DIAG="+diagDir,
+		"RUNNER_SCRIPTS="+filepath.Join(w.config.Dir, "scripts"),
+		"RUNNER_EXTERNALS="+filepath.Join(w.config.Dir, "externals"),
+	)
 	env, err := environment(w.config.Dir, overrides)
 	if err != nil {
 		return fmt.Errorf("prepare Worker environment: %w", err)
@@ -229,9 +236,8 @@ func (w *Worker) startProcess(env []string) error {
 	}
 	w.pipes = append(w.pipes, backRead, backWrite)
 	w.input = write
-	bin := filepath.Join(w.config.Dir, "bin")
 	w.process, err = process.Start(process.Config{
-		Path: filepath.Join(bin, binaryName()), Dir: bin, Args: []string{"spawnclient"},
+		Path: w.config.Path, Dir: w.config.WorkDir, Args: []string{"spawnclient"},
 		Env: env, Stdout: w.config.Stdout, Stderr: w.config.Stderr,
 		Files: []*os.File{read, backWrite}, KeepDescendants: w.config.KeepDescendants,
 	})

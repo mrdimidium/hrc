@@ -69,6 +69,7 @@ http_archive(
         "//runner:patch/runtime-config.patch",
         "//runner:patch/diagnostics.patch",
         "//runner:patch/single-file.patch",
+        "//runner:patch/resources-layout.patch",
     ],
     patch_args = ["-p2"],
 )

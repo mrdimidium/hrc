@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+diff --git a/src/Runner.Common/HostContext.cs b/src/Runner.Common/HostContext.cs
+--- a/src/Runner.Common/HostContext.cs
++++ b/src/Runner.Common/HostContext.cs
+@@ -139,3 +139,3 @@
+                 // this should give us _diag folder under runner root directory
+-                string diagLogDirectory = Environment.GetEnvironmentVariable("RUNNER_DIAG") ?? Path.Combine(new DirectoryInfo(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar)).Parent.FullName, Constants.Path.DiagDirectory);
++                string diagLogDirectory = Environment.GetEnvironmentVariable("RUNNER_DIAG") ?? Path.Combine(Directory.GetCurrentDirectory(), Constants.Path.DiagDirectory);
+                 _traceManager = new TraceManager(new HostTraceListener(diagLogDirectory, hostType, logPageSize, logRetentionDays), stdoutTraceListener, this.SecretMasker);
+@@ -390,10 +390,9 @@
+                 case WellKnownDirectory.Externals:
+-                    path = Path.Combine(
+-                        GetDirectory(WellKnownDirectory.Root),
+-                        Constants.Path.ExternalsDirectory);
++                    path = Environment.GetEnvironmentVariable("RUNNER_EXTERNALS");
++                    ArgUtil.NotNullOrEmpty(path, "RUNNER_EXTERNALS");
+                     break;
+ 
+                 case WellKnownDirectory.Root:
+-                    path = new DirectoryInfo(GetDirectory(WellKnownDirectory.Bin)).Parent.FullName;
++                    path = Directory.GetCurrentDirectory();
+                     break;
+ 
+diff --git a/src/Runner.Worker/Expressions/HashFilesFunction.cs b/src/Runner.Worker/Expressions/HashFilesFunction.cs
+--- a/src/Runner.Worker/Expressions/HashFilesFunction.cs
++++ b/src/Runner.Worker/Expressions/HashFilesFunction.cs
+@@ -70,6 +70,6 @@
+-            string binDir = AppContext.BaseDirectory;
+-            string runnerRoot = new DirectoryInfo(binDir).Parent.FullName;
++            string scriptsDir = Environment.GetEnvironmentVariable("RUNNER_SCRIPTS");
++            string externalsDir = Environment.GetEnvironmentVariable("RUNNER_EXTERNALS");
+ 
+-            string node = Path.Combine(runnerRoot, "externals", NodeUtil.GetInternalNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");
+-            string hashFilesScript = Path.Combine(binDir, "hashFiles");
++            string node = Path.Combine(externalsDir, NodeUtil.GetInternalNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");
++            string hashFilesScript = Path.Combine(scriptsDir, "hashFiles.js");
+             var hashResult = string.Empty;
+@@ -203,6 +203,6 @@
+-            string binDir = AppContext.BaseDirectory;
+-            string runnerRoot = new DirectoryInfo(binDir).Parent.FullName;
++            string scriptsDir = Environment.GetEnvironmentVariable("RUNNER_SCRIPTS");
++            string externalsDir = Environment.GetEnvironmentVariable("RUNNER_EXTERNALS");
+ 
+-            string node = Path.Combine(runnerRoot, "externals", NodeUtil.GetInternalNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");
+-            string hashFilesScript = Path.Combine(binDir, "hashFiles");
++            string node = Path.Combine(externalsDir, NodeUtil.GetInternalNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");
++            string hashFilesScript = Path.Combine(scriptsDir, "hashFiles.js");
+             var hashResult = string.Empty;
+diff --git a/src/Runner.Worker/Handlers/ScriptHandler.cs b/src/Runner.Worker/Handlers/ScriptHandler.cs
+--- a/src/Runner.Worker/Handlers/ScriptHandler.cs
++++ b/src/Runner.Worker/Handlers/ScriptHandler.cs
+@@ -308,2 +308,2 @@
+                 string node = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Externals), NodeUtil.GetInternalNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");
+-                string macOSRunInvoker = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Bin), "macos-run-invoker.js");
++                string macOSRunInvoker = Path.Combine(System.Environment.GetEnvironmentVariable("RUNNER_SCRIPTS"), "macosRunInvoker.js");

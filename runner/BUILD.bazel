@@ -159,7 +159,6 @@ py_test(
 pkg_files(
     name = "worker_files",
     srcs = [":worker"],
-    prefix = "runner/bin",
     strip_prefix = strip_prefix.files_only(),
     renames = select({
         "@platforms//os:windows": {":worker": "hrc-worker.exe"},
@@ -174,8 +173,12 @@ pkg_files(
         "@actions_runner//:Misc/layoutbin/hashFiles/index.js",
         "@actions_runner//:Misc/layoutbin/macos-run-invoker.js",
     ],
-    prefix = "runner/bin",
-    strip_prefix = strip_prefix.from_root("Misc/layoutbin"),
+    prefix = "runner/scripts",
+    strip_prefix = strip_prefix.files_only(),
+    renames = {
+        "@actions_runner//:Misc/layoutbin/hashFiles/index.js": "hashFiles.js",
+        "@actions_runner//:Misc/layoutbin/macos-run-invoker.js": "macosRunInvoker.js",
+    },
 )
 
 pkg_files(
