@@ -6,42 +6,16 @@
 package process
 
 import (
-	"errors"
 	"os"
+	"os/exec"
 	"strconv"
-	"sync"
 	"syscall"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
-type platform struct {
-	mu       sync.Mutex
-	job      windows.Handle
-	assigned bool
-}
-
-// Pipe returns a pipe whose ends are not inherited unless passed in Files.
-// os.Pipe uses synchronous Windows pipe handles, as required by .NET's
-// AnonymousPipeClientStream, but makes both ends inheritable.
-func Pipe() (*os.File, *os.File, error) {
-	read, write, err := os.Pipe()
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, f := range []*os.File{read, write} {
-		if err := windows.SetHandleInformation(windows.Handle(f.Fd()), windows.HANDLE_FLAG_INHERIT, 0); err != nil {
-			read.Close()
-			write.Close()
-			return nil, nil, err
-		}
-	}
-	return read, write, nil
-}
-
 // configure passes Files as inherited handles named by their values, gives the
-// child a console of its own and creates the job it will join.
+// child a console of its own.
 func (p *Process) configure(files []*os.File) error {
 	handles := make([]syscall.Handle, len(files))
 	for i, f := range files {
@@ -59,60 +33,38 @@ func (p *Process) configure(files []*os.File) error {
 		CreationFlags:              windows.CREATE_NO_WINDOW,
 		AdditionalInheritedHandles: handles,
 	}
-	job, err := windows.CreateJobObject(nil, nil)
-	if err != nil {
-		return err
-	}
-	p.platform.job = job
-	limits := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
-	if !p.keep {
-		limits.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-	}
-	_, err = windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits)))
-	return err
+	return nil
 }
 
-// attach puts the child into the job. Runner.Worker is still waiting for its
-// initial NewJobRequest, so every process a job step launches joins the job.
+// attach puts the child into the PGroup's crash-cleanup job. Runner.Worker is
+// still waiting for its initial NewJobRequest, so its job steps inherit it.
 func (p *Process) attach() error {
 	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(p.cmd.Process.Pid))
 	if err != nil {
 		return err
 	}
 	defer windows.CloseHandle(process)
-	if err = windows.AssignProcessToJobObject(p.platform.job, process); err != nil {
+	return windows.AssignProcessToJobObject(p.group.platform.job, process)
+}
+
+func testDetachDescendant(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP}
+}
+
+// testShareConsole gives the test a console for its children to share, as a
+// service has.
+func testShareConsole() {
+	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
+	// AllocConsole fails when the test already has a console, which is fine.
+	kernel32.NewProc("AllocConsole").Call()
+}
+
+// Windows interrupts by console rather than by process group.
+func testSendInterrupt() error {
+	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
+	// Ignore Ctrl+C here, then send it to every process on this console.
+	if r, _, err := kernel32.NewProc("SetConsoleCtrlHandler").Call(0, 1); r == 0 {
 		return err
 	}
-	p.platform.mu.Lock()
-	p.platform.assigned = true
-	p.platform.mu.Unlock()
-	return nil
-}
-
-// keepDescendants leaves the job's remaining processes running: Bazel and
-// similar servers start detached but cannot leave the job without breakaway.
-func (p *Process) keepDescendants() bool { return p.keep }
-
-// Kill terminates the child and every descendant in its tree.
-func (p *Process) Kill() error {
-	p.platform.mu.Lock()
-	defer p.platform.mu.Unlock()
-	if p.platform.job != 0 && p.platform.assigned {
-		return windows.TerminateJobObject(p.platform.job, 1)
-	}
-	err := p.cmd.Process.Kill()
-	if errors.Is(err, os.ErrProcessDone) {
-		return nil
-	}
-	return err
-}
-
-func (p *Process) release() {
-	p.platform.mu.Lock()
-	defer p.platform.mu.Unlock()
-	if p.platform.job != 0 {
-		// KILL_ON_JOB_CLOSE also removes descendants left behind after exit.
-		windows.CloseHandle(p.platform.job)
-		p.platform.job = 0
-	}
+	return windows.GenerateConsoleCtrlEvent(windows.CTRL_C_EVENT, 0)
 }

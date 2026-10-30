@@ -37,30 +37,35 @@ func (c *Secret) Take() (string, error) {
 	switch c.Src {
 	case "env":
 		value = os.Getenv(c.Value)
+
 	case "file":
 		data, err := os.ReadFile(c.Value)
 		if err != nil {
 			return "", err
 		}
 		value = string(data)
+
 	case "inline":
 		value = c.Value
+
 	default:
 		return "", fmt.Errorf("unknown secret type")
 	}
+
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return "", fmt.Errorf("%s secret %q is empty", c.Src, c.Value)
 	}
+
 	return value, nil
 }
 
 // GitHubApp authenticates as an installation of a GitHub App. Only the
 // private key is a secret.
 type GitHubApp struct {
+	PrivateKey     Secret `json:"privateKey"`
 	ClientID       string `json:"clientId"`
 	InstallationID int64  `json:"installationId"`
-	PrivateKey     Secret `json:"privateKey"`
 }
 
 func (a *GitHubApp) Validate() error {
@@ -82,7 +87,11 @@ func (a *GitHubApp) auth() (scaleset.GitHubAppAuth, error) {
 	if err != nil {
 		return scaleset.GitHubAppAuth{}, fmt.Errorf("read private key: %w", err)
 	}
-	return scaleset.GitHubAppAuth{ClientID: a.ClientID, InstallationID: a.InstallationID, PrivateKey: key}, nil
+	return scaleset.GitHubAppAuth{
+		PrivateKey:     key,
+		ClientID:       a.ClientID,
+		InstallationID: a.InstallationID,
+	}, nil
 }
 
 type Group struct {
@@ -91,12 +100,13 @@ type Group struct {
 	Group  string   `json:"group"`
 	Labels []string `json:"labels"`
 
-	// ReuseDirs keeps runner directories, with their workspaces, between jobs
-	// and leaves processes started by a job, such as build servers, running.
-	ReuseDirs bool `json:"reuseDirs"`
-
 	Token     Secret    `json:"pat"`
 	GitHubApp GitHubApp `json:"app"`
+
+	// ReuseDirs keeps slots, with their workspaces and build servers, between
+	// jobs. Controller shutdown expires all slots, killing their remaining
+	// processes and deleting their directories.
+	ReuseDirs bool `json:"reuseDirs"`
 }
 
 func (c *Group) defaults() {

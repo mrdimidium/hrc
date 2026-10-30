@@ -31,7 +31,7 @@ var sessionRetryMin, sessionRetryMax = 5 * time.Second, 2 * time.Minute
 // run returns an error only for local failures that a retry cannot fix. GitHub
 // API and session failures are retried until ctx is canceled, without
 // interrupting runners already started by the group.
-func run(ctx context.Context, cfg *Config, group *Group, host *slots) error {
+func run(ctx context.Context, cfg *Config, group *Group, host *scheduler) error {
 	logger := slog.Default().With("group", group.Name)
 	logger.Info("Starting group controller")
 
@@ -49,15 +49,10 @@ func run(ctx context.Context, cfg *Config, group *Group, host *slots) error {
 	var running atomic.Int32
 	defer runners.Wait()
 
-	var dirs *dirPool
-	if group.ReuseDirs {
-		dirs = newDirPool(cfg.DirBuilds, group.Name)
-	}
-
 	delay := sessionRetryMin
 	for {
 		started := time.Now()
-		err := serve(ctx, cfg, group, host, dirs, runnerDir, &runners, &running)
+		err := serve(ctx, cfg, group, host, runnerDir, &runners, &running)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -78,7 +73,7 @@ func run(ctx context.Context, cfg *Config, group *Group, host *slots) error {
 
 // serve connects the group's scale set and starts runners for assigned jobs
 // until the session fails or ctx is canceled.
-func serve(ctx context.Context, cfg *Config, group *Group, host *slots, dirs *dirPool, runnerDir string, runners *sync.WaitGroup, running *atomic.Int32) error {
+func serve(ctx context.Context, cfg *Config, group *Group, host *scheduler, runnerDir string, runners *sync.WaitGroup, running *atomic.Int32) error {
 	logger := slog.Default().With("group", group.Name)
 	info := scaleset.SystemInfo{System: "hrc", Version: Version}
 
@@ -149,14 +144,18 @@ func serve(ctx context.Context, cfg *Config, group *Group, host *slots, dirs *di
 				running.Add(1)
 				host.queue()
 				runners.Go(func() {
-					if err := host.acquire(ctx); err != nil {
+					s, err := host.acquire(ctx, group)
+					if err != nil {
 						running.Add(-1)
+						if ctx.Err() == nil {
+							logger.Error("Acquire runner slot", "err", err)
+						}
 						return
 					}
-					err := runRunner(ctx, client, scaleSet.ID, cfg, runnerDir, dirs)
+					err = runRunner(ctx, client, scaleSet.ID, cfg, runnerDir, s)
 					// Leave the group's count before the slot is advertised again.
 					running.Add(-1)
-					host.release()
+					err = errors.Join(err, host.release(s))
 					if err != nil {
 						logger.Error("Runner failed", "err", err)
 					}
@@ -287,28 +286,13 @@ func sameLabels(current, desired []scaleset.Label) bool {
 	return slices.Equal(names(current), names(desired))
 }
 
-// runRunner registers and runs one ephemeral runner. Without dirs, it runs in
-// a temporary workspace, removed afterwards; otherwise it runs in a
-// directory reused from the pool, and leaves the job's processes running.
-func runRunner(ctx context.Context, client *scaleset.Client, scaleSetID int, cfg *Config, runnerDir string, dirs *dirPool) error {
-	var dir, name string
-	if dirs == nil {
-		var err error
-		if dir, err = os.MkdirTemp(cfg.DirBuilds, "runner-"); err != nil {
-			return fmt.Errorf("create runner directory: %w", err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil {
-				slog.Error("Remove runner directory", "dir", dir, "err", err)
-			}
-		}()
-		name = cfg.Id + "-" + filepath.Base(dir)
-	} else {
-		var release func()
-		dir, release = dirs.take()
-		defer release()
+// runRunner registers and runs one ephemeral runner in an acquired slot. The
+// scheduler owns the slot's lifetime and releases it after the runner stops.
+func runRunner(ctx context.Context, client *scaleset.Client, scaleSetID int, cfg *Config, runnerDir string, s *slot) error {
+	name := cfg.Id + "-" + filepath.Base(s.dir)
+	if s.reusable {
 		// A runner left registered by a crash must not block the name.
-		name = fmt.Sprintf("%s-%s-%06x", cfg.Id, filepath.Base(dir), rand.Uint32()&0xffffff)
+		name = fmt.Sprintf("%s-%s-%06x", cfg.Id, filepath.Base(s.dir), rand.Uint32()&0xffffff)
 	}
 	version, err := os.ReadFile(filepath.Join(runnerDir, "VERSION"))
 	if err != nil {
@@ -324,7 +308,8 @@ func runRunner(ctx context.Context, client *scaleset.Client, scaleSetID int, cfg
 	if err != nil {
 		return fmt.Errorf("decode runner config: %w", err)
 	}
-	localConfig := registration.workerConfig(dir, dirs != nil)
+	localConfig := registration.workerConfig(s.dir)
+	localConfig.PGroup = s.group
 	localConfig.Path, localConfig.Dir = cfg.PathWorker, runnerDir
 	local, err := worker.New(localConfig)
 	if err != nil {

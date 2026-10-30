@@ -6,16 +6,11 @@
 package process
 
 import (
-	"errors"
 	"os"
+	"os/exec"
 	"strconv"
 	"syscall"
 )
-
-type platform struct{}
-
-// Pipe returns a pipe whose ends close on exec unless passed in Files.
-func Pipe() (*os.File, *os.File, error) { return os.Pipe() }
 
 // configure passes Files as descriptors 3 and up, and starts the child in a
 // process group of its own.
@@ -30,23 +25,20 @@ func (p *Process) configure(files []*os.File) error {
 
 func (p *Process) attach() error { return nil }
 
-func (p *Process) release() {}
+func testDetachDescendant(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+}
 
-func (p *Process) keepDescendants() bool { return false }
+// Unix has no console to allocate for the test's children.
+func testShareConsole() {}
 
-// Kill terminates the child and every descendant in its tree.
-func (p *Process) Kill() error {
-	group, err := os.FindProcess(-p.cmd.Process.Pid)
-	if err == nil {
-		err = group.Kill()
-		group.Release()
+// testSendInterrupt interrupts the caller's process group, as the runner does
+// to cancel a step.
+func testSendInterrupt() error {
+	group, err := os.FindProcess(-os.Getpid())
+	if err != nil {
+		return err
 	}
-	if err == nil || errors.Is(err, os.ErrProcessDone) {
-		return nil
-	}
-	rootErr := p.cmd.Process.Kill()
-	if errors.Is(rootErr, os.ErrProcessDone) {
-		return nil
-	}
-	return errors.Join(err, rootErr)
+	defer group.Release()
+	return group.Signal(os.Interrupt)
 }

@@ -13,7 +13,7 @@ go_library(
     ),
     importpath = "gilti.dev/hrc/internal/process",
     visibility = ["//visibility:public"],
-    deps = select({
+    deps = ["//internal/runtime"] + select({
         "@platforms//os:windows": ["@org_golang_x_sys//windows"],
         "//conditions:default": [],
     }),
@@ -24,8 +24,5 @@ go_test(
     size = "small",
     srcs = glob(["*_test.go"]),
     embed = [":process"],
-    deps = select({
-        "@platforms//os:windows": ["@org_golang_x_sys//windows"],
-        "//conditions:default": [],
-    }),
+    deps = ["//internal/runtime"],
 )

@@ -13,10 +13,16 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"gilti.dev/hrc/internal/process"
 )
 
 // Config describes the local runtime, regardless of how the runner is registered.
 type Config struct {
+	// PGroup owns the slot's processes. It is required to start a job and must
+	// outlive the Worker. Closing a Worker does not close this shared group.
+	PGroup *process.PGroup
+
 	// Path selects the hrc-worker executable. A bare name is resolved through PATH.
 	// Dir contains shared scripts/ and externals/ resources and an optional .env.
 	// WorkDir is the job's private working directory and the process cwd.
@@ -25,7 +31,8 @@ type Config struct {
 	WorkDir string
 
 	// Env overrides the inherited environment and the installation's .env file.
-	// RUNNER_CONFIG, RUNNER_DIAG, RUNNER_SCRIPTS and RUNNER_EXTERNALS are reserved.
+	// RUNNER_CONFIG, RUNNER_DIAG, RUNNER_SCRIPTS, RUNNER_EXTERNALS and
+	// RUNNER_TRACKING_GROUP are reserved.
 	Env []string
 
 	// Name defaults to the hostname. ID and group identify the runner in logs
@@ -44,15 +51,6 @@ type Config struct {
 
 	MonitorSocket string
 	DisableUpdate bool
-
-	// KeepDescendants leaves processes that outlive a Worker which exited on
-	// its own, so build servers can serve later jobs. On Unix it changes
-	// nothing: daemons leave the Worker's process group with setsid and survive
-	// anyway, while other descendants are still killed. On Windows, job
-	// membership is inherited and only breakaway leaves it, so every remaining
-	// process is kept, including after the controller itself crashes. Forced
-	// termination by Close or a failed startup still kills the whole tree.
-	KeepDescendants bool
 
 	// Stdout and Stderr default to os.Stdout and os.Stderr. A writer shared by
 	// both streams must support concurrent Write calls.

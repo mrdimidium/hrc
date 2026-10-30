@@ -127,14 +127,14 @@ func (r *runnerRegistration) listenerConfig(version string) listener.Config {
 		DisableUpdate: true, SkipSessionRecover: r.settings.SkipSessionRecover}
 }
 
-func (r *runnerRegistration) workerConfig(dir string, keepDescendants bool) worker.Config {
+func (r *runnerRegistration) workerConfig(dir string) worker.Config {
 	return worker.Config{
 		Dir: dir, Name: r.settings.AgentName, ID: r.settings.AgentID,
 		GroupID: r.settings.PoolID, GroupName: r.settings.PoolName,
 		WorkDir: dir, GitHubURL: r.settings.GitHubURL,
 		ServerURL: r.settings.ServerURL, ServerURLV2: r.settings.ServerURLV2,
 		HostedServer: r.settings.HostedServer, MonitorSocket: r.settings.MonitorSocket,
-		DisableUpdate: true, KeepDescendants: keepDescendants,
+		DisableUpdate: true,
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 	"unicode/utf16"
 
 	"gilti.dev/hrc/internal/process"
+	platformruntime "gilti.dev/hrc/internal/runtime"
 )
 
 // Result uses the upstream TaskResult values. Unknown means the process never
@@ -113,7 +114,9 @@ type Worker struct {
 }
 
 // New validates the local configuration and copies its values. It creates no
-// files or processes. Runtime settings are passed in RUNNER_CONFIG by StartJob.
+// files or processes. PGroup is required only for StartJob, allowing New to
+// validate an installation before any slot exists. Runtime settings are passed
+// in RUNNER_CONFIG by StartJob.
 func New(config Config) (*Worker, error) {
 	if err := config.validate(); err != nil {
 		return nil, err
@@ -141,6 +144,9 @@ func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage, diagDir 
 	}
 	if body := bytes.TrimSpace(payload); len(body) == 0 || body[0] != '{' || !json.Valid(body) {
 		return errors.New("Worker job must be a JSON object")
+	}
+	if w.config.PGroup == nil {
+		return errors.New("Worker process group is required")
 	}
 	w.mu.Lock()
 	if w.closed {
@@ -225,21 +231,21 @@ func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage, diagDir 
 }
 
 func (w *Worker) startProcess(env []string) error {
-	read, write, err := process.Pipe()
+	read, write, err := platformruntime.Pipe()
 	if err != nil {
 		return err
 	}
 	w.pipes = append(w.pipes, read, write)
-	backRead, backWrite, err := process.Pipe()
+	backRead, backWrite, err := platformruntime.Pipe()
 	if err != nil {
 		return err
 	}
 	w.pipes = append(w.pipes, backRead, backWrite)
 	w.input = write
-	w.process, err = process.Start(process.Config{
+	w.process, err = w.config.PGroup.Start(process.Config{
 		Path: w.config.Path, Dir: w.config.WorkDir, Args: []string{"spawnclient"},
 		Env: env, Stdout: w.config.Stdout, Stderr: w.config.Stderr,
-		Files: []*os.File{read, backWrite}, KeepDescendants: w.config.KeepDescendants,
+		Files: []*os.File{read, backWrite},
 	})
 	if err != nil {
 		return err
@@ -311,8 +317,9 @@ func (w *Worker) kill() error {
 	return w.killErr
 }
 
-// Close forcibly terminates a still-running process tree, interrupts startup and
-// IPC and waits for reaping. It is safe to call repeatedly and concurrently.
+// Close forcibly terminates a still-running Worker, interrupts startup and IPC
+// and waits for reaping. It is safe to call repeatedly and concurrently.
+// Descendants belong to the slot's PGroup and may outlive this Worker.
 // Configuration files, workspaces, diagnostics and the installation belong to
 // the caller.
 func (w *Worker) Close() error {
@@ -336,8 +343,8 @@ func (w *Worker) Close() error {
 }
 
 func (w *Worker) finish(result Result, err error) error {
-	// The worker can exit before its descendants. Clean up the process tree
-	// before publishing Done, even when Close has not been called yet.
+	// Release this Worker's resources before publishing Done. Descendants are
+	// owned by the slot's PGroup, which remains available for later jobs.
 	var processErr error
 	if w.process != nil {
 		processErr = w.process.Close()

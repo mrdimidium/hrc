@@ -11,6 +11,14 @@ with a shared, read-only runtime and separate workspaces, then cleans them up
 when they finish. Jobs run directly on the host, while installed tools and shared caches
 persist between builds.
 
+A runner slot owns a workspace and a process group. With `reuseDirs`, both can
+be reused across jobs during one controller run. Graceful controller shutdown
+expires all slots, including idle reusable ones: remaining processes are killed
+and slot directories are deleted. On all three platforms, process cleanup uses
+the inherited `RUNNER_TRACKING_GROUP` environment variable and is best effort.
+Windows also retains a Job Object as a crash-cleanup safety net. On Linux and
+macOS, cleanup cannot run if the controller is killed with `SIGKILL` or crashes.
+
 Although ephemeral build environments offer many advantages, stateful build
 hosts are useful for a personal CI setup: they keep toolchains ready and caches
 local, and accommodate Windows and macOS alongside Linux, whereas ARC supports

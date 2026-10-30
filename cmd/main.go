@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"math"
 	"os"
 	"os/signal"
 	"sync"
@@ -50,20 +49,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	total := math.MaxInt32
-	if cfg.Quota != (Resources{}) {
-		host, err := hostResources()
-		if err != nil {
-			slog.Error("Couldn't detect host resources", "err", err)
-			os.Exit(1)
-		}
-		if total, err = slotCount(host, cfg.Reserve, cfg.Quota); err != nil {
-			slog.Error("Invalid quota", "err", err)
-			os.Exit(1)
-		}
-		slog.Info("Host capacity", "cpu", host.CPU, "memory", host.Memory, "runners", total)
+	host, err := newHostScheduler(cfg.DirBuilds, cfg.Reserve, cfg.Quota)
+	if err != nil {
+		slog.Error("Couldn't create scheduler", "err", err)
+		os.Exit(1)
 	}
-	host := newSlots(total)
 
 	// Service managers stop with SIGTERM; Windows delivers console close and
 	// shutdown events as SIGTERM as well.
@@ -86,6 +76,10 @@ func main() {
 		})
 	}
 	wg.Wait()
+	if err := host.Close(); err != nil {
+		slog.Error("Close scheduler", "err", err)
+		failed.Store(true)
+	}
 	if failed.Load() {
 		os.Exit(1)
 	}

@@ -17,17 +17,11 @@ go_library(
     visibility = ["//:__pkg__"],  # keep
     deps = [
         "//internal/listener",
+        "//internal/process",
+        "//internal/runtime",
         "//internal/worker",
         "@com_github_actions_scaleset//:scaleset",
-    ] + select({
-        "@rules_go//go/platform:darwin": [
-            "@org_golang_x_sys//unix",
-        ],
-        "@rules_go//go/platform:windows": [
-            "@org_golang_x_sys//windows",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 go_binary(
@@ -49,6 +43,7 @@ go_test(
     embed = [":cmd_lib"],
     deps = [
         "//internal/listener",
+        "//internal/process",
         "//internal/worker",
         "@com_github_actions_scaleset//:scaleset",
     ],

@@ -13,10 +13,11 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"testing"
 	"time"
+
+	platformruntime "gilti.dev/hrc/internal/runtime"
 )
 
 const childArg = "hrc-process-child"
@@ -28,22 +29,6 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(m.Run())
 }
-
-// sendInterrupt interrupts every process in the caller's process group, as the
-// GitHub runner does to cancel a step. Windows replaces it with a Ctrl+C to
-// the caller's console.
-var sendInterrupt = func() error {
-	group, err := os.FindProcess(-os.Getpid())
-	if err != nil {
-		return err
-	}
-	defer group.Release()
-	return group.Signal(os.Interrupt)
-}
-
-// shareConsole gives the test a console for its children to share, as a
-// service has. Only Windows has consoles to share.
-var shareConsole = func() {}
 
 // testChild runs in the child started by startChild. It waits for the test's
 // go-ahead on its first inherited file, so that it does nothing before joining
@@ -70,17 +55,17 @@ func testChild(mode string, names []string) int {
 			return 43
 		}
 		return 0
-	case "descendant", "descendant_exit":
-		if err := startDescendant(os.Getenv(socketEnv)); err != nil {
+	case "descendant", "descendant_exit", "detached", "detached_exit":
+		if err := startDescendant(os.Getenv(socketEnv), mode == "detached" || mode == "detached_exit"); err != nil {
 			return 44
 		}
-		if mode == "descendant" {
+		if mode == "descendant" || mode == "detached" {
 			time.Sleep(time.Hour)
 		}
 		return 17
 	case "interrupt":
 		signal.Ignore(os.Interrupt)
-		if err := sendInterrupt(); err != nil {
+		if err := testSendInterrupt(); err != nil {
 			fmt.Fprintln(os.Stderr, "interrupt:", err)
 			return 45
 		}
@@ -89,27 +74,47 @@ func testChild(mode string, names []string) int {
 	return 46
 }
 
-// startChild starts this test binary as a child in mode. It returns the file
-// that gives the child its go-ahead and the one the child reports on.
-func startChild(t *testing.T, mode string, keep bool, env ...string) (*Process, *os.File, *os.File, *bytes.Buffer) {
+// newTestPGroup creates a group closed when the test ends.
+func newTestPGroup(t *testing.T) *PGroup {
+	t.Helper()
+	g, err := NewPGroup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := g.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return g
+}
+
+// startChild starts this test binary in mode, returning its go-ahead and report
+// files. The process belongs to a group closed when the test ends.
+func startChild(t *testing.T, mode string, env ...string) (*Process, *os.File, *os.File, *bytes.Buffer) {
+	t.Helper()
+	return startGroupChild(t, newTestPGroup(t), mode, env...)
+}
+
+func startGroupChild(t *testing.T, g *PGroup, mode string, env ...string) (*Process, *os.File, *os.File, *bytes.Buffer) {
 	t.Helper()
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	startRead, start, err := Pipe()
+	startRead, start, err := platformruntime.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	report, reportWrite, err := Pipe()
+	report, reportWrite, err := platformruntime.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	p, err := Start(Config{
+	p, err := g.Start(Config{
 		Path: self, Dir: t.TempDir(), Args: []string{childArg, mode},
 		Env: append(os.Environ(), env...), Stdout: &output, Stderr: &output,
-		Files: []*os.File{startRead, reportWrite}, KeepDescendants: keep,
+		Files: []*os.File{startRead, reportWrite},
 	})
 	startRead.Close()
 	reportWrite.Close()
@@ -149,13 +154,16 @@ func runDescendant() {
 
 // startDescendant starts a descendant of the calling process that connects to
 // socket, without waiting for it.
-func startDescendant(socket string) error {
+func startDescendant(socket string, detached bool) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
 	}
 	cmd := exec.Command(self, descendantArg)
 	cmd.Env = append(os.Environ(), socketEnv+"="+socket)
+	if detached {
+		testDetachDescendant(cmd)
+	}
 	return cmd.Start()
 }
 
@@ -239,7 +247,7 @@ func (d *descendant) Check(alive bool) {
 }
 
 func TestFiles(t *testing.T) {
-	p, start, report, output := startChild(t, "report", false)
+	p, start, report, output := startChild(t, "report")
 	if _, err := start.Write([]byte{1}); err != nil {
 		t.Fatal(err)
 	}
@@ -252,32 +260,38 @@ func TestFiles(t *testing.T) {
 	}
 }
 
-// Descendants die with the tree. They survive the child only when it exited on
-// its own and KeepDescendants holds, and only on Windows: Unix always kills the
-// process group, so there only daemons that left it survive.
+// Descendants outlive an individual process, even after Kill or Close. Only
+// closing their PGroup terminates them, whether or not they changed session.
 func TestDescendants(t *testing.T) {
 	for _, tt := range []struct {
-		name       string
-		exit, keep bool
+		name     string
+		stop     func(*Process) error
+		detached bool
 	}{
-		{"exit", true, false},
-		{"exit-keep", true, true},
-		{"kill", false, false},
-		{"kill-keep", false, true},
+		{"exit", nil, false},
+		{"kill", (*Process).Kill, false},
+		{"close", (*Process).Close, false},
+		{"exit-detached", nil, true},
+		{"kill-detached", (*Process).Kill, true},
+		{"close-detached", (*Process).Close, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			listener := listenDescendant(t)
 			mode := "descendant"
-			if tt.exit {
-				mode = "descendant_exit"
+			if tt.detached {
+				mode = "detached"
 			}
-			p, start, _, output := startChild(t, mode, tt.keep, socketEnv+"="+listener.Socket)
+			if tt.stop == nil {
+				mode += "_exit"
+			}
+			g := newTestPGroup(t)
+			p, start, _, output := startGroupChild(t, g, mode, socketEnv+"="+listener.Socket)
 			if _, err := start.Write([]byte{1}); err != nil {
 				t.Fatal(err)
 			}
 			descendant := listener.Accept()
-			if !tt.exit {
-				if err := p.Kill(); err != nil {
+			if tt.stop != nil {
+				if err := tt.stop(p); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -285,13 +299,17 @@ func TestDescendants(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tt.exit && state.ExitCode() != 17 {
+			if tt.stop == nil && state.ExitCode() != 17 {
 				t.Fatalf("exit = %v: %s", state, output)
 			}
 			if err := p.Close(); err != nil {
 				t.Fatal(err)
 			}
-			descendant.Check(tt.exit && tt.keep && runtime.GOOS == "windows")
+			descendant.Check(true)
+			if err := g.Close(); err != nil {
+				t.Fatal(err)
+			}
+			descendant.Check(false)
 		})
 	}
 }
@@ -299,11 +317,11 @@ func TestDescendants(t *testing.T) {
 // An interrupt the child sends to everything around it, as the GitHub runner
 // does to cancel a step, must stay in its tree and not reach the caller.
 func TestInterruptStaysInTree(t *testing.T) {
-	shareConsole()
+	testShareConsole()
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
-	p, start, _, output := startChild(t, "interrupt", false)
+	p, start, _, output := startChild(t, "interrupt")
 	if _, err := start.Write([]byte{1}); err != nil {
 		t.Fatal(err)
 	}

@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf16"
+
+	"gilti.dev/hrc/internal/process"
 )
 
 func TestMain(m *testing.M) {
@@ -162,9 +164,18 @@ func workerTestConfig(t *testing.T, mode string, count int) (Config, *workerProc
 	if err = os.WriteFile(filepath.Join(dir, "bin", binaryName()), data, 0700); err != nil {
 		t.Fatal(err)
 	}
+	group, err := process.NewPGroup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := group.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	output := &workerProcessTestOutput{ready: make(chan struct{})}
 	env := []string{"HRC_WORKER_PROCESS_TEST=1", "HRC_WORKER_TEST_DIR=" + dir, "HRC_WORKER_TEST_MODE=" + mode, "HRC_WORKER_TEST_COUNT=" + strconv.Itoa(count)}
-	return Config{Path: filepath.Join(dir, "bin", binaryName()), Dir: dir, WorkDir: dir, Env: env, Stdout: output, Stderr: output}, output
+	return Config{PGroup: group, Path: filepath.Join(dir, "bin", binaryName()), Dir: dir, WorkDir: dir, Env: env, Stdout: output, Stderr: output}, output
 }
 
 func workerProcessTestJob(index int) []byte {
@@ -542,6 +553,15 @@ func TestWorkerBeforeStart(t *testing.T) {
 	}
 	if err := w.StartJob(t.Context(), workerProcessTestJob(0), ""); !errors.Is(err, ErrClosed) {
 		t.Fatalf("StartJob after Close: %v", err)
+	}
+}
+
+func TestWorkerRequiresPGroup(t *testing.T) {
+	config, _ := workerTestConfig(t, "frames", 1)
+	config.PGroup = nil
+	w := newTestWorker(t, config) // Installation validation needs no slot.
+	if err := w.StartJob(t.Context(), workerProcessTestJob(0), ""); err == nil {
+		t.Fatal("started a Worker without a process group")
 	}
 }
 

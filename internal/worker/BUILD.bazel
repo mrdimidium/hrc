@@ -13,7 +13,10 @@ go_library(
     ),
     importpath = "gilti.dev/hrc/internal/worker",
     visibility = ["//visibility:public"],
-    deps = ["//internal/process"],
+    deps = [
+        "//internal/process",
+        "//internal/runtime",
+    ],
 )
 
 go_test(
@@ -21,4 +24,5 @@ go_test(
     size = "small",
     srcs = glob(["*_test.go"]),
     embed = [":worker"],
+    deps = ["//internal/process"],
 )

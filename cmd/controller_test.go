@@ -32,12 +32,17 @@ import (
 	"unicode/utf16"
 
 	"gilti.dev/hrc/internal/listener"
+	"gilti.dev/hrc/internal/process"
 	"gilti.dev/hrc/internal/worker"
 
 	"github.com/actions/scaleset"
 )
 
 func TestMain(m *testing.M) {
+	if len(os.Args) == 2 && os.Args[1] == "hrc-slot-child" {
+		time.Sleep(time.Hour)
+		os.Exit(0)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "spawnclient" {
 		fd, _ := strconv.Atoi(os.Args[2])
 		input := os.NewFile(uintptr(fd), "worker-input")
@@ -84,6 +89,13 @@ func TestMain(m *testing.M) {
 		}
 		if err := os.WriteFile(filepath.Join(diag, "Worker.log"), []byte("diagnostics"), 0600); err != nil {
 			os.Exit(43)
+		}
+		trackingGroup := os.Getenv("RUNNER_TRACKING_GROUP")
+		if trackingGroup == "" {
+			os.Exit(44)
+		}
+		if err := os.WriteFile("tracking-group", []byte(trackingGroup), 0600); err != nil {
+			os.Exit(45)
 		}
 		mode := os.Getenv("WORKER_TEST_MODE")
 		// Report delivery, so tests can act on a running job without sleeping.
@@ -308,7 +320,16 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 	if err != nil {
 		t.Fatal(err)
 	}
-	localConfig := registration.workerConfig(dir, false)
+	localConfig := registration.workerConfig(dir)
+	localConfig.PGroup, err = process.NewPGroup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := localConfig.PGroup.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	localConfig.Path = filepath.Join(dir, "bin", workerBinary())
 	localConfig.Env = []string{"WORKER_ENV=override", "WORKER_TEST_MODE=" + mode}
 	localConfig.Stdout, localConfig.Stderr = io.Discard, io.Discard
@@ -481,7 +502,10 @@ func TestServerRunRunnerUsesWorker(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			err = runRunner(ctx, client, 7, cfg, worker.dir, nil)
+			pool := newTestScheduler(t, cfg.DirBuilds, 1)
+			s := acquireTestSlot(t, pool, &Group{})
+			err = runRunner(ctx, client, 7, cfg, worker.dir, s)
+			err = errors.Join(err, pool.release(s))
 			if mode == "success" || mode == "failure" {
 				if err != nil {
 					t.Fatalf("workflow result treated as infrastructure error: %v", err)
@@ -513,7 +537,7 @@ func TestServerRunRunnerUsesWorker(t *testing.T) {
 	}
 }
 
-func TestServerRunRunnerReusesDirectory(t *testing.T) {
+func TestServerRunRunnerReusesSlot(t *testing.T) {
 	// Each job needs its own fixture: every runner has its own credentials.
 	runner, completed, _, _, _ := controllerFixture(t, "success")
 	second, completedSecond, _, _, _ := controllerFixture(t, "success")
@@ -552,11 +576,24 @@ func TestServerRunRunnerReusesDirectory(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cfg := &Config{Id: "host", PathWorker: filepath.Join(runner.dir, "bin", workerBinary()), DirBuilds: t.TempDir(), DirLogs: t.TempDir()}
-	dirs := newDirPool(cfg.DirBuilds, "smoke")
+	pool := newTestScheduler(t, cfg.DirBuilds, 1)
+	group := &Group{Name: "smoke", ReuseDirs: true}
+	var trackingGroup string
 	cached := filepath.Join(cfg.DirBuilds, "smoke-1", "cache")
 	for job := range 2 {
-		if err := runRunner(ctx, client, 7, cfg, runner.dir, dirs); err != nil {
+		s := acquireTestSlot(t, pool, group)
+		err := runRunner(ctx, client, 7, cfg, runner.dir, s)
+		if err = errors.Join(err, pool.release(s)); err != nil {
 			t.Fatalf("job %d: %v", job, err)
+		}
+		identity, err := os.ReadFile(filepath.Join(filepath.Dir(cached), "tracking-group"))
+		if err != nil || len(identity) == 0 {
+			t.Fatalf("missing slot identity: %q, %v", identity, err)
+		}
+		if job == 0 {
+			trackingGroup = string(identity)
+		} else if string(identity) != trackingGroup {
+			t.Fatalf("slot identity changed: %q -> %q", trackingGroup, identity)
 		}
 		if job == 0 {
 			// The fake Worker creates no workspace; stand in for a real job.
@@ -583,6 +620,12 @@ func TestServerRunRunnerReusesDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(cfg.DirBuilds, "smoke-1", ".runner")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("runner settings remain: %v", err)
+	}
+	if err := pool.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := os.ReadDir(cfg.DirBuilds); err != nil || len(entries) != 0 {
+		t.Fatalf("reusable slot directories survived shutdown: %v, %v", entries, err)
 	}
 }
 
@@ -802,12 +845,19 @@ func TestRunRetriesSessionWithoutInterruptingRunners(t *testing.T) {
 		cancel()
 	}()
 	cfg := &Config{Id: "host", PathWorker: filepath.Join(runner.dir, "bin", workerBinary()), DirBuilds: t.TempDir(), DirLogs: t.TempDir(), DirRunner: runner.dir}
-	group := &Group{Url: api.URL + "/org", Name: "smoke", Group: scaleset.DefaultRunnerGroup, Token: Secret{Src: "inline", Value: "pat"}}
-	if err := run(ctx, cfg, group, newSlots(1)); err != nil {
+	group := &Group{Url: api.URL + "/org", Name: "smoke", Group: scaleset.DefaultRunnerGroup, ReuseDirs: true, Token: Secret{Src: "inline", Value: "pat"}}
+	host := newTestScheduler(t, cfg.DirBuilds, 1)
+	if err := run(ctx, cfg, group, host); err != nil {
 		t.Fatalf("session failures must be retried: %v", err)
+	}
+	if err := host.Close(); err != nil {
+		t.Fatal(err)
 	}
 	if completed.Load() != 1 {
 		t.Errorf("job interrupted by session failure: complete=%d", completed.Load())
+	}
+	if entries, err := os.ReadDir(cfg.DirBuilds); err != nil || len(entries) != 0 {
+		t.Fatalf("reusable slots survived controller shutdown: %v, %v", entries, err)
 	}
 	if jits.Load() != 1 {
 		t.Errorf("runner started %d times for one assigned job", jits.Load())
