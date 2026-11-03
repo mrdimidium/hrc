@@ -112,7 +112,7 @@ def _ci_release(ctx):
                 fail("Release %s is already published; refusing to overwrite it." % tag)
         else:
             _gh(ctx, ["release", "create", tag, "--verify-tag", "--draft", "--title", version, "--notes", notes])
-    published = names + ["SHASUMS256.txt"]
+    published = names + ["SHASUMS256.txt", "VERSION"]
     _gh(ctx, ["release", "upload", tag] + [directory + "/" + name for name in published] + ["--clobber"])
     if tag == "dev":
         assets = json.decode(_view(ctx, tag).stdout)["assets"]
