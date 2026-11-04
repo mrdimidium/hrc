@@ -8,14 +8,14 @@ paths; generated files and directory trees use their basenames. rules_pkg mappin
 retain their explicit destinations and attributes. Only declared
 outputs of deps are included, never their transitive build inputs or runfiles.
 
-Unix archives contain OS-specific standalone package hooks with helpers inlined
-at build time. Configurations and hooks remain available on the private <name>_files target
-through systemd/openrc/launchd/winsw/scripts output groups.
+Unix archives contain OS-specific standalone package hooks. Configurations and
+hooks remain available on the private <name>_files target through
+systemd/openrc/launchd/winsw/scripts output groups.
 """
 
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load(":archive.bzl", "service_contents")
-load(":scripts.bzl", "inline_script", "script_substitutions")
+load(":scripts.bzl", "script_substitutions")
 
 def _xml(value):
     return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&apos;")
@@ -127,10 +127,14 @@ def _service_files_impl(ctx):
             os = ctx.attr.os,
             arch = ctx.attr.arch,
         )
-        common = getattr(ctx.file, "_" + ctx.attr.os + "_common")
         for source in getattr(ctx.files, "_" + ctx.attr.os + "_scripts"):
             output = ctx.actions.declare_file(ctx.label.name + "/scripts/" + source.basename)
-            inline_script(ctx, source, output, common, settings)
+            ctx.actions.expand_template(
+                template = source,
+                output = output,
+                substitutions = settings,
+                is_executable = True,
+            )
             scripts.append(output)
     outputs["scripts"] = depset(scripts)
     return service_contents(ctx, outputs, executable) + [OutputGroupInfo(**outputs)]
@@ -150,10 +154,8 @@ _service_files = rule(
         "prefix": attr.string(default = "/usr/local", doc = "Unix installation prefix for the binary and macOS configuration."),
         "service": attr.string(doc = "Service ID and base filename; defaults to the target name."),
         "user": attr.string(doc = "Unix service user; defaults to service. WinSW uses LocalService."),
-        "_darwin_common": attr.label(default = Label("//tools/rules_service:scripts/darwin/common.sh"), allow_single_file = True),
         "_darwin_scripts": attr.label(default = Label("//tools/rules_service:darwin_script_templates"), allow_files = True),
         "_launchd": attr.label(default = Label("//tools/rules_service:templates/launchd.tpl"), allow_single_file = True),
-        "_linux_common": attr.label(default = Label("//tools/rules_service:scripts/linux/common.sh"), allow_single_file = True),
         "_linux_scripts": attr.label(default = Label("//tools/rules_service:linux_script_templates"), allow_files = True),
         "_openrc": attr.label(default = Label("//tools/rules_service:templates/openrc.tpl"), allow_single_file = True),
         "_systemd": attr.label(default = Label("//tools/rules_service:templates/systemd.tpl"), allow_single_file = True),

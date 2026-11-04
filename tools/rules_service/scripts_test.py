@@ -38,11 +38,21 @@ class ScriptsTest(unittest.TestCase):
                     self.assertNotRegex(text, r"@[A-Z_]+@")
                     self.assertNotIn("uname", text)
                     self.assertNotIn("arch()", text)
-                    self.assertNotIn('. "$(dirname "$0")/common.sh"', text)
-                    for variable, expected in paths.items():
-                        assignment = re.search(rf"^{variable}=(.*)$", text, re.MULTILINE)
-                        self.assertIsNotNone(assignment)
-                        self.assertEqual(shlex.split(assignment.group(1)), [expected])
+                    self.assertNotIn("common.sh", text)
+                    self.assertNotIn("select_init", text)
+                    self.assertNotRegex(text, r"(?m)^(?:config|config_dir|state_dir|log_dir)=")
+                    self.assertNotRegex(text, r"\$(?:\{)?(?:config|config_dir|state_dir|log_dir)\b")
+                    if name == "preinstall.sh":
+                        directories = {
+                            shlex.split(line)[-1]
+                            for line in text.splitlines()
+                            if line.startswith("install -d ")
+                        }
+                        self.assertEqual(directories, {paths["config_dir"], paths["config_dir"] + "/secrets", paths["state_dir"], paths["log_dir"]})
+                    elif name == "postinstall.sh":
+                        condition = re.search(r"^if \[ -f (.*) \]; then$", text, re.MULTILINE)
+                        self.assertIsNotNone(condition)
+                        self.assertEqual(shlex.split(condition.group(1)), [paths["config"]])
                     forbidden = ("dscl", "launchctl") if system == "linux" else ("systemctl", "rc-service", "getent", "useradd")
                     for command in forbidden:
                         self.assertNotIn(command, text)
@@ -64,20 +74,19 @@ class ScriptsTest(unittest.TestCase):
             for target, scripts in FIXTURES.items():
                 if not target.startswith("linux-"):
                     continue
-                text = scripts["postremove.sh"].read_text(encoding="utf-8")
-                for init in ("", "unsupported"):
-                    with self.subTest(target=target, init=init):
-                        # Mock only the root check. An empty PATH prevents init
-                        # detection and any real service-manager invocation.
-                        result = subprocess.run(
-                            [shell],
-                            input="id() { printf '0\\n'; }\n" + text,
-                            env={**os.environ, "PATH": empty_path, "SERVICE_INIT": init},
-                            capture_output=True,
-                            text=True,
-                        )
-                        self.assertEqual(result.returncode, 0, result.stderr)
-                        self.assertIn("skipping service integration", result.stderr)
+                text = scripts["preremove.sh"].read_text(encoding="utf-8")
+                with self.subTest(target=target):
+                    # Mock only the root check. An empty PATH prevents init
+                    # detection and any real service-manager invocation.
+                    result = subprocess.run(
+                        [shell],
+                        input="id() { printf '0\\n'; }\n" + text,
+                        env={**os.environ, "PATH": empty_path},
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("skipping service integration", result.stderr)
 
 
 if __name__ == "__main__":

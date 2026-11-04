@@ -5,12 +5,14 @@
 - [Manual installation](#manual-installation)
   - [Download](#download)
   - [Installation](#installation-1)
-  - [Configuration](#configuration)
+  - [Upgrading](#upgrading)
+  - [Removal](#removal)
 
 ## Manual installation
 
-Use a fresh working directory and the same shell session. Start the service
-only after configuration. On upgrades, keep the existing configuration and data.
+Use a fresh working directory and the same shell session. After installation,
+follow [configuration and operation](./usage.md) to configure and start the service.
+For an existing installation, follow the [upgrade procedure](#upgrading).
 
 ### Download
 
@@ -106,20 +108,6 @@ For OpenRC:
 sudo install -m 0755 -o root -g root services/hrc.alpine /etc/init.d/hrc
 ```
 
-**Upgrade:** from the new archive, run `sudo ./scripts/preinstall.sh` first.
-For other init systems, stop the controller yourself. Then remove the old runtime:
-
-```sh
-sudo rm -rf /usr/local/lib/hrc
-```
-
-Repeat the file and service definition installation commands, then run
-`sudo systemctl start hrc.service` or `sudo rc-service hrc start`.
-
-Before deleting installed files, run `sudo systemctl disable --now hrc.service`,
-or `sudo rc-service hrc stop` and `sudo rc-update del hrc default` (and any other
-runlevels). After deleting a systemd unit, run `sudo systemctl daemon-reload`.
-
 **macOS**
 
 The preinstall hook prepares the account and directories and unloads an
@@ -135,24 +123,6 @@ sudo chmod -R u=rwX,go=rX /usr/local/lib/hrc
 sudo install -m 0644 -o root -g wheel services/org.hrc.plist /Library/LaunchDaemons/org.hrc.plist
 sudo plutil -lint /Library/LaunchDaemons/org.hrc.plist
 ```
-
-Keep state and job directory paths free of spaces.
-
-**Upgrade:** from the new archive, run `sudo ./scripts/preinstall.sh` first,
-then remove the old runtime:
-
-```sh
-sudo rm -rf /usr/local/lib/hrc
-```
-
-Repeat the file and launchd definition installation commands, then start:
-
-```sh
-sudo launchctl bootstrap system /Library/LaunchDaemons/org.hrc.plist
-```
-
-Before deleting installed files, run `sudo launchctl bootout system/org.hrc`
-(omit if already unloaded) and `sudo launchctl disable system/org.hrc`.
 
 **Windows (PowerShell as Administrator)**
 
@@ -198,102 +168,69 @@ Copy-Item C:\Downloads\WinSW-x64.exe -Destination "$installRoot\hrc-service.exe"
 & "$installRoot\hrc-service.exe" install
 ```
 
-**Upgrade:** set the same paths, then stop the service and remove the old runtime:
+Continue with [configuration and operation](./usage.md).
 
-```powershell
-& "$installRoot\hrc-service.exe" stopwait
-Remove-Item "$installRoot\lib\hrc" -Recurse -Force
-```
+### Upgrading
 
-Repeat the program file and WinSW XML copy commands, then `Start-Service hrc`.
-Do not recreate the configuration or register WinSW again.
+[Download, verify, and extract](#download) a new release, then run the commands
+below from the extracted directory. Keep existing configuration, secrets and data;
+do not repeat the configuration examples in the [usage guide](./usage.md#configuration).
 
-Before deleting installed files, run `& "$installRoot\hrc-service.exe" stopwait`
-and `& "$installRoot\hrc-service.exe" uninstall`. Configuration and data can be
-kept on all platforms.
+**Linux**
 
-### Configuration
-
-First installation only. Replace the host ID, repository URL, group name, labels
-(`ARM64` or `X64`), and source token paths in the examples.
-
-Services do not inherit your terminal's `GITHUB_TOKEN`; these examples use a
-file-based PAT. For GitHub App authentication, replace `pat` with `app` and
-install its private key with the same permissions.
-
-**macOS / Linux**
+The preinstall hook stops the systemd/OpenRC service, retaining enablement.
+For other init systems, stop the controller yourself. Remove the old runtime:
 
 ```sh
-case $(uname -s) in Darwin) config_dir=/usr/local/etc/hrc; log_dir=/Library/Logs/hrc; runner_os=macOS ;; Linux) config_dir=/etc/hrc; log_dir=/var/log/hrc; runner_os=linux ;; esac
-case $(uname -m) in x86_64) runner_arch=X64 ;; arm64|aarch64) runner_arch=ARM64 ;; esac
-
-sudo tee "$config_dir/hrc.json" > /dev/null <<EOF
-{
-  "id": "build-01",
-  "pathWorker": "/usr/local/bin/hrc-worker",
-  "dirRunner": "/usr/local/lib/hrc",
-  "dirBuilds": "jobs",
-  "dirLogs": "$log_dir",
-  "groups": [
-    {
-      "url": "https://github.com/your-org/your-repo",
-      "name": "hrc-builds",
-      "group": "default",
-      "labels": ["$runner_os", "$runner_arch"],
-      "pat": {"type": "file", "value": "$config_dir/secrets/github-token"}
-    }
-  ]
-}
-EOF
-sudo chown root:hrc "$config_dir/hrc.json"
-sudo chmod 0640 "$config_dir/hrc.json"
-sudo install -m 0640 -o root -g hrc /path/to/github-token "$config_dir/secrets/github-token"
+sudo ./scripts/preinstall.sh
+sudo rm -rf /usr/local/lib/hrc
 ```
 
-Start with your init system. **systemd:**
+Repeat the file and service definition commands from [installation](#installation-1),
+then run `sudo systemctl start hrc.service` or `sudo rc-service hrc start`.
+
+**macOS**
+
+Unload the service and remove the old runtime:
 
 ```sh
-sudo systemctl enable --now hrc.service
+sudo ./scripts/preinstall.sh
+sudo rm -rf /usr/local/lib/hrc
 ```
 
-**OpenRC:**
+Repeat the file and launchd definition commands from [installation](#installation-1),
+then start:
 
 ```sh
-sudo rc-update add hrc default
-sudo rc-service hrc start
-```
-
-**launchd:**
-
-```sh
-sudo launchctl enable system/org.hrc
 sudo launchctl bootstrap system /Library/LaunchDaemons/org.hrc.plist
 ```
 
 **Windows (PowerShell as Administrator)**
 
-Use `$installRoot` and `$dataRoot` from installation. Write UTF-8 without a BOM:
+Set the installation paths, stop the service and remove the old runtime:
 
 ```powershell
-$config = @{
-    id = 'build-01'
-    pathWorker = "$installRoot\hrc-worker.exe"
-    dirRunner = "$installRoot\lib\hrc"
-    dirBuilds = 'jobs'
-    dirLogs = "$dataRoot\logs"
-    groups = @(
-        @{
-            url = 'https://github.com/your-org/your-repo'
-            name = 'hrc-builds'
-            group = 'default'
-            labels = @('windows', 'X64')
-            pat = @{ type = 'file'; value = "$dataRoot\secrets\github-token" }
-        }
-    )
-} | ConvertTo-Json -Depth 10
-[IO.File]::WriteAllText("$dataRoot\hrc.json", $config + "`n", (New-Object Text.UTF8Encoding($false)))
-
-Copy-Item C:\path\to\github-token -Destination "$dataRoot\secrets\github-token"
-icacls "$dataRoot\secrets\github-token" /reset
-Start-Service hrc
+$installRoot = "$env:ProgramFiles\hrc"
+$dataRoot = "$env:ProgramData\hrc"
+& "$installRoot\hrc-service.exe" stopwait
+Remove-Item "$installRoot\lib\hrc" -Recurse -Force
 ```
+
+Repeat the program file and WinSW XML copy commands from [installation](#installation-1),
+then `Start-Service hrc`. Do not recreate the directories or configuration, or
+register WinSW again.
+
+### Removal
+
+Before deleting installed files, stop and disable or unregister the service.
+Configuration, secrets, accounts and build data can be retained.
+
+- **systemd:** `sudo systemctl disable --now hrc.service`. After deleting the unit,
+  run `sudo systemctl daemon-reload`.
+- **OpenRC:** `sudo rc-service hrc stop` and `sudo rc-update del hrc default`
+  (and remove it from any other runlevels).
+- **launchd:** `sudo launchctl bootout system/org.hrc` (omit if already unloaded)
+  and `sudo launchctl disable system/org.hrc`.
+- **Windows (PowerShell as Administrator):**
+  `& "$env:ProgramFiles\hrc\hrc-service.exe" stopwait` and
+  `& "$env:ProgramFiles\hrc\hrc-service.exe" uninstall`.

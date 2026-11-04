@@ -4,12 +4,11 @@
 # Target: @ARCH@-@OS@
 
 set -eu
-# @COMMON@
+
 if [ "$(id -u)" != 0 ]; then
     echo '@NAME@: run this command as root' >&2; exit 1
 fi
-select_init
 
-if [ "$init" = systemd ] && [ -d /run/systemd/system ]; then
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
     systemctl daemon-reload
 fi

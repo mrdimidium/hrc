@@ -15,6 +15,7 @@ filegroup(
     srcs = [
         "README.md",
         "docs/installation.md",
+        "docs/usage.md",
     ],
     visibility = ["//cmd:__pkg__"],
 )

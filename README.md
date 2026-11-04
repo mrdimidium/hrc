@@ -31,7 +31,8 @@ each GitHub runner handles one job at a time, requiring multiple instances.
 
 ## Installation
 
-See the [installation guide](./docs/installation.md) for macOS, Linux, and Windows.
+See the [installation guide](./docs/installation.md) for macOS, Linux, and Windows,
+then [configure and manage the service](./docs/usage.md).
 
 ## License
 

@@ -7,8 +7,6 @@ load(":service.bzl", "service")
 exports_files([
     "archive.bzl",
     "scripts.bzl",
-    "scripts/darwin/common.sh",
-    "scripts/linux/common.sh",
     "service.bzl",
 ] + glob(["templates/*.tpl"]))
 
@@ -25,18 +23,12 @@ filegroup(
 
 filegroup(
     name = "linux_script_templates",
-    srcs = glob(
-        ["scripts/linux/*.sh"],
-        exclude = ["scripts/linux/common.sh"],
-    ),
+    srcs = glob(["scripts/linux/*.sh"]),
 )
 
 filegroup(
     name = "darwin_script_templates",
-    srcs = glob(
-        ["scripts/darwin/*.sh"],
-        exclude = ["scripts/darwin/common.sh"],
-    ),
+    srcs = glob(["scripts/darwin/*.sh"]),
 )
 
 # Script-only fixtures avoid depending on the controller or .NET runner.
