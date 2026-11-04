@@ -5,7 +5,7 @@
   <id>@NAME@</id>
   <name>@NAME@</name>
   <description>@DESCRIPTION@</description>
-  <!-- The installer fills these paths for the selected installation directories. -->
+  <!-- Fill these paths for the selected installation directories. -->
   <executable>@EXECUTABLE@</executable>
   <arguments>@ARGUMENTS@</arguments>
   <workingdirectory>.</workingdirectory>

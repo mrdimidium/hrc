@@ -4,7 +4,6 @@
 """Build a service's file layout independently of the final package format."""
 
 load("@rules_pkg//pkg:providers.bzl", "PackageFilegroupInfo", "PackageFilesInfo")
-load(":scripts.bzl", "inline_script")
 
 def _add(files, source, destination, mode):
     if not destination or destination.startswith("/") or "\\" in destination or any([part in ["", ".", ".."] for part in destination.split("/")]):
@@ -20,13 +19,12 @@ def _dependency_path(file):
         return file.basename
     return file.short_path.removeprefix("../" + file.owner.workspace_name + "/").removeprefix(file.owner.package + "/")
 
-def service_contents(ctx, outputs, settings, executable):
+def service_contents(ctx, outputs, executable):
     """Return packaging providers and files for the selected platform's layout.
 
     Args:
         ctx: Service rule context with the binary and explicit dependencies.
         outputs: Generated definitions and hooks, keyed by output group.
-        settings: Escaped shell substitutions for the installer.
         executable: Installed binary basename without a Windows extension.
 
     Returns:
@@ -37,12 +35,6 @@ def service_contents(ctx, outputs, settings, executable):
     _add(files, ctx.file.bin, executable + (".exe" if windows else ""), "0755")
     if ctx.file.config:
         _add(files, ctx.file.config, ctx.file.config.basename, "0644")
-    if ctx.file.installer:
-        installer = ctx.file.installer
-        if not windows:
-            installer = ctx.actions.declare_file(ctx.label.name + "/installer/" + installer.basename)
-            inline_script(ctx, ctx.file.installer, installer, ctx.file._common, settings)
-        _add(files, installer, installer.basename, "0644" if windows else "0755")
     kinds = {"darwin": ["launchd"], "linux": ["systemd", "openrc"], "windows": ["winsw"]}[ctx.attr.os]
     for kind in kinds:
         for file in outputs[kind].to_list():

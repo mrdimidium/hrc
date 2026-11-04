@@ -66,10 +66,6 @@ service(
         "{config}",
     ],
     config = "pkg/hrc.json",
-    installer = select({
-        "@platforms//os:windows": "pkg/control.ps1",
-        "//conditions:default": "pkg/control",
-    }),
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )

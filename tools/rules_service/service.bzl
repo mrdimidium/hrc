@@ -8,8 +8,8 @@ paths; generated files and directory trees use their basenames. rules_pkg mappin
 retain their explicit destinations and attributes. Only declared
 outputs of deps are included, never their transitive build inputs or runfiles.
 
-Unix archives contain four standalone package hooks with helpers inlined at build
-time. Configurations and hooks remain available on the private <name>_files target
+Unix archives contain OS-specific standalone package hooks with helpers inlined
+at build time. Configurations and hooks remain available on the private <name>_files target
 through systemd/openrc/launchd/winsw/scripts output groups.
 """
 
@@ -69,7 +69,7 @@ def _service_files_impl(ctx):
         state = (prefix + "/var/" if macos else "/var/lib/") + name
         log = ("/Library/Logs/" if macos else "/var/log/") + name
         if kind == "winsw":
-            # The independent installer resolves this placeholder at installation time.
+            # Resolve this placeholder when placing the Windows service definition.
             config = "%SERVICE_CONFIG%"
         args = [arg.replace("{config}", config) for arg in ctx.attr.args]
         if kind == "systemd":
@@ -116,26 +116,29 @@ def _service_files_impl(ctx):
             is_executable = kind == "openrc",
         )
         outputs[kind] = depset([output])
-    settings = script_substitutions(
-        name = name,
-        user = user,
-        group = group,
-        description = ctx.attr.description,
-        prefix = prefix or "/",
-        executable = executable,
-    )
     scripts = []
-    for source in ([] if ctx.attr.os == "windows" else ctx.files._scripts):
-        output = ctx.actions.declare_file(ctx.label.name + "/scripts/" + source.basename)
-        inline_script(ctx, source, output, ctx.file._common, settings)
-        scripts.append(output)
+    if ctx.attr.os != "windows":
+        settings = script_substitutions(
+            name = name,
+            user = user,
+            group = group,
+            description = ctx.attr.description,
+            prefix = prefix,
+            os = ctx.attr.os,
+            arch = ctx.attr.arch,
+        )
+        common = getattr(ctx.file, "_" + ctx.attr.os + "_common")
+        for source in getattr(ctx.files, "_" + ctx.attr.os + "_scripts"):
+            output = ctx.actions.declare_file(ctx.label.name + "/scripts/" + source.basename)
+            inline_script(ctx, source, output, common, settings)
+            scripts.append(output)
     outputs["scripts"] = depset(scripts)
-    return service_contents(ctx, outputs, settings, executable) + [OutputGroupInfo(**outputs)]
+    return service_contents(ctx, outputs, executable) + [OutputGroupInfo(**outputs)]
 
 _service_files = rule(
     implementation = _service_files_impl,
     attrs = {
-        "arch": attr.string(mandatory = True),
+        "arch": attr.string(mandatory = True, values = ["amd64", "arm64"]),
         "args": attr.string_list(doc = "Arguments; {config} expands to the OS-specific JSON configuration path."),
         "bin": attr.label(mandatory = True, allow_single_file = True),
         "config": attr.label(allow_single_file = True),
@@ -143,26 +146,27 @@ _service_files = rule(
         "description": attr.string(mandatory = True, doc = "Human-readable service description."),
         "executable": attr.string(doc = "Binary basename, without .exe; defaults to service."),
         "group": attr.string(doc = "Unix service group; defaults to user."),
-        "installer": attr.label(allow_single_file = True),
         "os": attr.string(mandatory = True, values = ["linux", "darwin", "windows"]),
         "prefix": attr.string(default = "/usr/local", doc = "Unix installation prefix for the binary and macOS configuration."),
         "service": attr.string(doc = "Service ID and base filename; defaults to the target name."),
         "user": attr.string(doc = "Unix service user; defaults to service. WinSW uses LocalService."),
-        "_common": attr.label(default = Label("//tools/rules_service:scripts/common.sh"), allow_single_file = True),
+        "_darwin_common": attr.label(default = Label("//tools/rules_service:scripts/darwin/common.sh"), allow_single_file = True),
+        "_darwin_scripts": attr.label(default = Label("//tools/rules_service:darwin_script_templates"), allow_files = True),
         "_launchd": attr.label(default = Label("//tools/rules_service:templates/launchd.tpl"), allow_single_file = True),
+        "_linux_common": attr.label(default = Label("//tools/rules_service:scripts/linux/common.sh"), allow_single_file = True),
+        "_linux_scripts": attr.label(default = Label("//tools/rules_service:linux_script_templates"), allow_files = True),
         "_openrc": attr.label(default = Label("//tools/rules_service:templates/openrc.tpl"), allow_single_file = True),
-        "_scripts": attr.label(default = Label("//tools/rules_service:script_templates"), allow_files = True),
         "_systemd": attr.label(default = Label("//tools/rules_service:templates/systemd.tpl"), allow_single_file = True),
         "_winsw": attr.label(default = Label("//tools/rules_service:templates/winsw.tpl"), allow_single_file = True),
     },
     doc = "Describe the service archive contents and generate its platform integration files.",
 )
 
-def service(name, bin, os, arch, deps = [], config = None, installer = None, tags = [], visibility = None, **kwargs):
-    """Build a service archive from a binary, optional config/installer and deps.
+def service(name, bin, os, arch, deps = [], config = None, tags = [], visibility = None, **kwargs):
+    """Build a service archive from a binary, optional config and deps.
 
     The archive includes TARGET and the selected OS's service definitions. Unix
-    archives also include four standalone lifecycle hooks. Source deps keep their
+    archives also include OS-specific lifecycle hooks. Source deps keep their
     package-relative paths, generated outputs use basenames, and directory trees
     keep their contents under their basename. Executables and trees use mode 0755;
     other dependency files use 0644. Duplicate destinations are errors.
@@ -171,11 +175,9 @@ def service(name, bin, os, arch, deps = [], config = None, installer = None, tag
         name: Archive target name, also the default service ID and binary basename.
         bin: Target producing a single main executable; no runfiles are included.
         os: Target OS: linux, darwin or windows.
-        arch: Target architecture, written with os into the archive's TARGET file.
+        arch: Target architecture: amd64 or arm64; substituted into hooks and TARGET.
         deps: Explicit additional targets or files to include in the archive.
         config: Optional configuration file, placed at the archive root.
-        installer: Optional installer script, placed at the archive root. On Unix
-            its common.sh import is inlined with the service's settings.
         tags: Tags applied to the archive and its private contents target.
         visibility: Visibility of the archive target.
         **kwargs: Service description settings: required description and optional
@@ -188,7 +190,6 @@ def service(name, bin, os, arch, deps = [], config = None, installer = None, tag
         arch = arch,
         deps = deps,
         config = config,
-        installer = installer,
         service = kwargs.pop("service", name),
         tags = tags,
         visibility = ["//visibility:private"],

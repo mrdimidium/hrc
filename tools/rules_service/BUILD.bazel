@@ -1,10 +1,14 @@
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
 # SPDX-License-Identifier: BSD-3-Clause
 
+load("@rules_python//python:py_test.bzl", "py_test")
+load(":service.bzl", "service")
+
 exports_files([
     "archive.bzl",
     "scripts.bzl",
-    "scripts/common.sh",
+    "scripts/darwin/common.sh",
+    "scripts/linux/common.sh",
     "service.bzl",
 ] + glob(["templates/*.tpl"]))
 
@@ -20,9 +24,106 @@ filegroup(
 )
 
 filegroup(
-    name = "script_templates",
+    name = "linux_script_templates",
     srcs = glob(
-        ["scripts/*.sh"],
-        exclude = ["scripts/common.sh"],
+        ["scripts/linux/*.sh"],
+        exclude = ["scripts/linux/common.sh"],
     ),
+)
+
+filegroup(
+    name = "darwin_script_templates",
+    srcs = glob(
+        ["scripts/darwin/*.sh"],
+        exclude = ["scripts/darwin/common.sh"],
+    ),
+)
+
+# Script-only fixtures avoid depending on the controller or .NET runner.
+# The binary is a placeholder input; it is never executed or packaged by tests.
+service(
+    name = "fixture_linux_amd64",
+    service = "fixture",
+    description = "Fixture's runner \"service\"",
+    prefix = "/opt/fixture's prefix",
+    os = "linux",
+    arch = "amd64",
+    bin = "templates/systemd.tpl",
+    tags = ["manual"],
+)
+
+service(
+    name = "fixture_linux_arm64",
+    service = "fixture",
+    description = "Fixture's runner \"service\"",
+    prefix = "/",
+    os = "linux",
+    arch = "arm64",
+    bin = "templates/systemd.tpl",
+    tags = ["manual"],
+)
+
+service(
+    name = "fixture_darwin_amd64",
+    service = "fixture",
+    description = "Fixture's runner \"service\"",
+    prefix = "/opt/fixture's prefix",
+    os = "darwin",
+    arch = "amd64",
+    bin = "templates/systemd.tpl",
+    tags = ["manual"],
+)
+
+service(
+    name = "fixture_darwin_arm64",
+    service = "fixture",
+    description = "Fixture's runner \"service\"",
+    prefix = "/",
+    os = "darwin",
+    arch = "arm64",
+    bin = "templates/systemd.tpl",
+    tags = ["manual"],
+)
+
+filegroup(
+    name = "fixture_linux_amd64_scripts",
+    srcs = [":fixture_linux_amd64_files"],
+    output_group = "scripts",
+)
+
+filegroup(
+    name = "fixture_linux_arm64_scripts",
+    srcs = [":fixture_linux_arm64_files"],
+    output_group = "scripts",
+)
+
+filegroup(
+    name = "fixture_darwin_amd64_scripts",
+    srcs = [":fixture_darwin_amd64_files"],
+    output_group = "scripts",
+)
+
+filegroup(
+    name = "fixture_darwin_arm64_scripts",
+    srcs = [":fixture_darwin_arm64_files"],
+    output_group = "scripts",
+)
+
+py_test(
+    name = "scripts_test",
+    size = "small",
+    srcs = ["scripts_test.py"],
+    args = [
+        "linux-amd64=$(rootpaths :fixture_linux_amd64_scripts)",
+        "linux-arm64=$(rootpaths :fixture_linux_arm64_scripts)",
+        "darwin-amd64=$(rootpaths :fixture_darwin_amd64_scripts)",
+        "darwin-arm64=$(rootpaths :fixture_darwin_arm64_scripts)",
+    ],
+    data = [
+        ":fixture_darwin_amd64_scripts",
+        ":fixture_darwin_arm64_scripts",
+        ":fixture_linux_amd64_scripts",
+        ":fixture_linux_arm64_scripts",
+    ],
+    visibility = ["//visibility:public"],
 )

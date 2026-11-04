@@ -31,72 +31,7 @@ each GitHub runner handles one job at a time, requiring multiple instances.
 
 ## Installation
 
-macOS / Linux:
-
-```sh
-case $(uname -s) in
-    Darwin) os=darwin ;;
-    Linux) os=linux ;;
-esac
-case $(uname -m) in
-    x86_64) arch=amd64 ;;
-    arm64|aarch64) arch=arm64 ;;
-esac
-
-gh release download --repo mrdimidium/hrc --pattern "hrc-$arch-$os-*.tar.gz" --pattern SHASUMS256.txt
-set -- hrc-"$arch"-"$os"-*.tar.gz
-archive=$1
-shasum -a 256 "$archive"
-
-# Compare the checksum with SHASUMS256.txt.
-gh attestation verify "$archive" --repo mrdimidium/hrc
-
-mkdir hrc-install
-tar -xzf "$archive" -C hrc-install
-
-cd hrc-install
-sudo ./control install
-
-# Configure hrc.json and provider secrets, then start the service using the printed commands.
-
-# Upgrade: run from a newly extracted release archive.
-sudo ./control install
-
-# Uninstall (configuration, secrets, old runner versions and build data are retained).
-sudo ./control remove
-```
-
-Windows (PowerShell as Administrator):
-
-```powershell
-$arch = switch ($machine) { AMD64 { 'amd64' } ARM64 { 'arm64' } }
-$machine = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
-
-gh release download --repo mrdimidium/hrc --pattern "hrc-$arch-windows-*.tar.gz" --pattern SHASUMS256.txt
-
-$archive = (Get-Item "hrc-$arch-windows-*.tar.gz").FullName
-Get-FileHash $archive -Algorithm SHA256
-
-# Compare the checksum with SHASUMS256.txt.
-gh attestation verify $archive --repo mrdimidium/hrc
-
-New-Item -ItemType Directory hrc-install
-tar -xzf $archive -C hrc-install
-
-Set-Location hrc-install
-
-# Download WinSW 2.x: https://github.com/winsw/winsw/tree/v2
-.\control.ps1 install -WinSWPath C:\Downloads\WinSW-x64.exe
-
-# Configure %ProgramData%\hrc\hrc.json and provider secrets.
-Start-Service hrc
-
-# Upgrade: run from a newly extracted release archive.
-.\control.ps1 install -WinSWPath C:\Downloads\WinSW-x64.exe
-
-# Uninstall (configuration, secrets, old runner versions and build data are retained).
-.\control.ps1 remove
-```
+See the [installation guide](./docs/installation.md) for macOS, Linux, and Windows.
 
 ## License
 
