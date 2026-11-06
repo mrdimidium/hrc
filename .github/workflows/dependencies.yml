@@ -100,4 +100,7 @@ jobs:
           RENOVATE_AUTODISCOVER: 'false'
           RENOVATE_ONBOARDING: 'false'
           RENOVATE_REQUIRE_CONFIG: required
+          # Allow only the repository's dispatcher with one subcommand, without
+          # a shell executor. The dispatcher rejects unknown subcommands.
+          RENOVATE_ALLOWED_COMMANDS: '["^\\.github/renovate-cmd [a-z][a-z-]*$"]'
           RENOVATE_DRY_RUN: ${{ inputs.dry-run && 'full' || '' }}

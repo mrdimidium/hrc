@@ -15,10 +15,10 @@
   minimumReleaseAge: "7 days",
   prConcurrentLimit: 10,
 
-  // Lockfile updates use mise safe mode rather than unsafe execution.
+  // Mise lockfile updates use safe mode rather than unsafe execution.
   constraints: { mise: ">=2026.7.12" },
 
-  enabledManagers: ["github-actions", "mise"],
+  enabledManagers: ["github-actions", "mise", "bazel-module"],
   separateMajorMinor: true,
   packageRules: [
     {
@@ -27,10 +27,28 @@
       matchManagers: ["github-actions"],
       matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
     },
+
     {
       groupName: "mise",
       matchManagers: ["mise"],
       matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+    },
+
+    {
+      groupName: "bazel",
+      matchManagers: ["bazel-module"],
+      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+    },
+    {
+      matchManagers: ["bazel-module"],
+      // Replace the built-in Bazelisk artifact update with our mise-pinned Bazel.
+      skipArtifactsUpdate: true,
+      postUpgradeTasks: {
+        commands: [".github/renovate-cmd bazel-lock"],
+        installTools: { mise: {} },
+        executionMode: "branch",
+        fileFilters: ["MODULE.bazel.lock"],
+      },
     },
   ],
 }
