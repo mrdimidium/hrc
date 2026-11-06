@@ -1,0 +1,25 @@
+// SPDX-FileCopyrightText: 2026 Nikolay Govorov
+// SPDX-License-Identifier: BSD-3-Clause
+
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended"],
+  timezone: "Etc/UTC",
+
+  automerge: false,
+  dependencyDashboard: true,
+  pinDigests: true,
+
+  // Allow time for upstream problems to surface before proposing updates.
+  minimumReleaseAge: "7 days",
+  prConcurrentLimit: 10,
+
+  enabledManagers: ["github-actions"],
+  packageRules: [
+    {
+      groupName: "github actions",
+      matchManagers: ["github-actions"],
+      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+    },
+  ],
+}
