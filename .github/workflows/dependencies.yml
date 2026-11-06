@@ -14,6 +14,11 @@ on:
       - .github/workflows/dependencies.yml
       - .github/renovate.json5
 
+  # Refresh the dashboard after a Renovate update is merged. Run the trusted
+  # base-branch workflow only; never check out or execute the PR's code.
+  pull_request_target:
+    types: [closed]
+
   # Ticking a dashboard checkbox edits the issue body; see the job guard.
   issues:
     types: [edited]
@@ -37,16 +42,26 @@ jobs:
     name: Renovate (${{ inputs.dry-run && 'dry-run' || 'apply' }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Issue edits count only on the dashboard and only by humans: Renovate
-    # rewrites the dashboard on every run, so reacting to its own edits
-    # would loop the workflow forever.
+    # Ignore the bot's own dashboard edits to avoid a loop. PR events count
+    # only for merged, same-repository Renovate branches targeting the default
+    # branch; closing an unmerged PR or a fork PR must not start Renovate.
     if: >-
       vars.ROBOT_APP_ID != '' &&
       (
-        github.event_name != 'issues' || 
+        github.event_name != 'issues' ||
         (
           github.event.issue.title == 'Dependency Dashboard' &&
           github.event.sender.type != 'Bot'
+        )
+      ) &&
+      (
+        github.event_name != 'pull_request_target' ||
+        (
+          github.event.pull_request.merged == true &&
+          github.event.pull_request.base.ref == github.event.repository.default_branch &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.user.type == 'Bot' &&
+          startsWith(github.event.pull_request.head.ref, 'renovate/')
         )
       )
     steps:
