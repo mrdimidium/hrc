@@ -47,46 +47,46 @@ url = "https://github.com/bazelbuild/bazel/releases/download/9.3.1/bazel-9.3.1-w
 url_api = "https://api.github.com/repos/bazelbuild/bazel/releases/assets/661108614"
 
 [[tools."github:aspect-build/aspect-cli"]]
-version = "2026.44.6"
+version = "2026.44.7"
 backend = "github:aspect-build/aspect-cli"
 
 [tools."github:aspect-build/aspect-cli".options]
 matching_regex = "^aspect-cli-(x86_64|aarch64)-(apple-darwin|unknown-linux-musl)$"
 
 [tools."github:aspect-build/aspect-cli"."platforms.linux-arm64"]
-checksum = "sha256:a7dd715f5b80bbd2c744db4c7a3b9f9a84ec6e7602585fb89b3b9667bba7f5d5"
-url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.44.6/aspect-cli-aarch64-unknown-linux-musl"
-url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/689570293"
+checksum = "sha256:c1a5419025361764f1ca01a0911883b406a0c06246087ae140af24853d834967"
+url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.44.7/aspect-cli-aarch64-unknown-linux-musl"
+url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/693701582"
 provenance = "github-attestations"
 
 [tools."github:aspect-build/aspect-cli"."platforms.linux-arm64-musl"]
-checksum = "sha256:a7dd715f5b80bbd2c744db4c7a3b9f9a84ec6e7602585fb89b3b9667bba7f5d5"
-url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.44.6/aspect-cli-aarch64-unknown-linux-musl"
-url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/689570293"
+checksum = "sha256:c1a5419025361764f1ca01a0911883b406a0c06246087ae140af24853d834967"
+url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.44.7/aspect-cli-aarch64-unknown-linux-musl"
+url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/693701582"
 provenance = "github-attestations"
 
 [tools."github:aspect-build/aspect-cli"."platforms.linux-x64"]
-checksum = "sha256:60c4f4f0865af48dc1af0ce2c416c6c092e4cca56ab501dc490817080b5771fa"
-url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.44.6/aspect-cli-x86_64-unknown-linux-musl"
-url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/689570295"
+checksum = "sha256:120f349f6809ab2bbaf727923fe66a951c8fb8c89756fb4a4363391709fd51e1"
+url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.44.7/aspect-cli-x86_64-unknown-linux-musl"
+url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/693701545"
 provenance = "github-attestations"
 
 [tools."github:aspect-build/aspect-cli"."platforms.linux-x64-musl"]
-checksum = "sha256:60c4f4f0865af48dc1af0ce2c416c6c092e4cca56ab501dc490817080b5771fa"
-url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.44.6/aspect-cli-x86_64-unknown-linux-musl"
-url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/689570295"
+checksum = "sha256:120f349f6809ab2bbaf727923fe66a951c8fb8c89756fb4a4363391709fd51e1"
+url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.44.7/aspect-cli-x86_64-unknown-linux-musl"
+url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/693701545"
 provenance = "github-attestations"
 
 [tools."github:aspect-build/aspect-cli"."platforms.macos-arm64"]
-checksum = "sha256:b9991eccee67b0283cc7b5352ead5402a85ec0e13be4e122415b75dc1c4e7012"
-url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.44.6/aspect-cli-aarch64-apple-darwin"
-url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/689570289"
+checksum = "sha256:1b27a09481c2ad5217851f9aea78ae15043761039ef6ce7990363c1cc94f77e0"
+url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.44.7/aspect-cli-aarch64-apple-darwin"
+url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/693701564"
 provenance = "github-attestations"
 
 [tools."github:aspect-build/aspect-cli"."platforms.macos-x64"]
-checksum = "sha256:c998eab5eaad4ff2b17cd04676d9291255e1c5f88ed27adffafd06149a39e088"
-url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.44.6/aspect-cli-x86_64-apple-darwin"
-url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/689570270"
+checksum = "sha256:1c5d083e9a4c5a9fc11eaf53ca349f461b3db240c763541796524076ef54ba7a"
+url = "https://github.com/aspect-build/aspect-cli/releases/download/v2026.44.7/aspect-cli-x86_64-apple-darwin"
+url_api = "https://api.github.com/repos/aspect-build/aspect-cli/releases/assets/693701542"
 provenance = "github-attestations"
 
 [[tools."pipx:reuse"]]
