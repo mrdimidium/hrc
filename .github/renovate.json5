@@ -18,8 +18,21 @@
   // Mise lockfile updates use safe mode rather than unsafe execution.
   constraints: { mise: ">=2026.7.12" },
 
-  enabledManagers: ["github-actions", "mise", "bazel-module"],
+  enabledManagers: ["github-actions", "mise", "bazel-module", "custom.regex"],
   separateMajorMinor: true,
+
+  customManagers: [
+    {
+      customType: "regex",
+      description: "Update annotated toolchain versions in Bazel modules",
+      depTypeTemplate: "bazel-toolchain",
+      managerFilePatterns: ["/(^|/)MODULE\\.bazel$/"],
+      // The version must be the first double-quoted string on the next line.
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)[ \\t]*\\r?\\n[^"\\r\\n]*"(?<currentValue>[^"\\r\\n]+)"',
+      ],
+    },
+  ],
   packageRules: [
     {
       // Major updates deliberately remain ungrouped for individual review.
@@ -35,13 +48,28 @@
     },
 
     {
-      groupName: "bazel",
+      groupName: "bazel modules",
       matchManagers: ["bazel-module"],
       matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
     },
     {
+      groupName: "bazel toolchains",
+      matchManagers: ["custom.regex"],
+      matchDepTypes: ["bazel-toolchain"],
+      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+    },
+    {
       matchManagers: ["bazel-module"],
-      // Replace the built-in Bazelisk artifact update with our mise-pinned Bazel.
+      // BCR releases may lack timestamps; do not hold those updates indefinitely.
+      // Releases with a known timestamp still observe minimumReleaseAge.
+      minimumReleaseAgeBehaviour: "timestamp-optional",
+    },
+    {
+      matchManagers: ["bazel-module", "custom.regex"],
+      // Other regex managers must not trigger Bazel lockfile generation.
+      // JSONata sees the internal name "regex", not the matchManagers alias.
+      matchJsonata: ['manager = "bazel-module" or (manager = "regex" and depType = "bazel-toolchain")'],
+      // Use our mise-pinned Bazel for both module and toolchain lockfile updates.
       skipArtifactsUpdate: true,
       postUpgradeTasks: {
         commands: [".github/renovate-cmd bazel-lock"],

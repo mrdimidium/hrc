@@ -16,6 +16,7 @@ bazel_dep(name = "bazel_skylib", version = "1.9.0")
 
 # Go
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+# renovate: datasource=golang-version depName=go
 go_sdk.download(version = "1.27.2")
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
@@ -31,6 +32,7 @@ register_toolchains("@pythons_hub//:all")
 
 # .NET
 dotnet = use_extension("@rules_dotnet//dotnet:extensions.bzl", "dotnet")
+# renovate: datasource=dotnet-version depName=dotnet-sdk
 dotnet.toolchain(dotnet_version = "10.0.400")
 use_repo(dotnet, "dotnet_toolchains")
 use_repo(
