@@ -128,7 +128,8 @@ func TestMain(m *testing.M) {
 			}
 			result = 3
 		} else {
-			time.Sleep(650 * time.Millisecond)
+			// Outlast half the fixture lease to exercise periodic renewal.
+			time.Sleep(1500 * time.Millisecond)
 		}
 		if mode == "failure" {
 			result = 2
@@ -267,7 +268,8 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 				w.WriteHeader(404)
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{"lockedUntil": time.Now().Add(500 * time.Millisecond)})
+			// Leave scheduling headroom on loaded CI hosts, especially Windows.
+			json.NewEncoder(w).Encode(map[string]any{"lockedUntil": time.Now().Add(2 * time.Second)})
 		case "/job/started":
 			startedOnce.Do(func() { close(started) })
 			w.WriteHeader(204)
