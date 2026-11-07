@@ -27,6 +27,19 @@
   customManagers: [
     {
       customType: "regex",
+      description: "Update Worker Node runtimes within their manually selected majors",
+      depTypeTemplate: "node-runtime",
+      datasourceTemplate: "node-version",
+      depNameTemplate: "node{{{runtimeMajor}}}",
+      packageNameTemplate: "node",
+      versioningTemplate: "node",
+      managerFilePatterns: ["/^MODULE\\.bazel$/"],
+      matchStrings: [
+        '"(?<runtimeMajor>\\d+)": \\("(?<currentValue>\\d+\\.\\d+\\.\\d+)", "[a-f0-9]{64}", "[a-f0-9]{64}"\\)',
+      ],
+    },
+    {
+      customType: "regex",
       description: "Update annotated toolchain versions in Bazel modules",
       depTypeTemplate: "bazel-toolchain",
       managerFilePatterns: ["/(^|/)MODULE\\.bazel$/"],
@@ -153,6 +166,33 @@
         installTools: { bazelisk: {} },
         executionMode: "branch",
         fileFilters: ["MODULE.bazel.lock"],
+      },
+    },
+
+    {
+      // The trusted workflow supplies a preflight allowlist before extraction.
+      // Without it (including other Renovate deployments), do not propose Node updates.
+      matchManagers: ["custom.regex"],
+      matchDepTypes: ["node-runtime"],
+      matchJsonata: ["$not($exists(allowedVersions))"],
+      enabled: false,
+    },
+    {
+      // Runtime majors follow actions/runner and are changed only by hand.
+      matchManagers: ["custom.regex"],
+      matchDepTypes: ["node-runtime"],
+      matchUpdateTypes: ["major"],
+      enabled: false,
+    },
+    {
+      matchManagers: ["custom.regex"],
+      matchDepTypes: ["node-runtime"],
+      skipArtifactsUpdate: true,
+      postUpgradeTasks: {
+        commands: [".github/renovate-cmd node-lock"],
+        installTools: { bazelisk: {} },
+        executionMode: "branch",
+        fileFilters: ["MODULE.bazel", "MODULE.bazel.lock"],
       },
     },
   ],

@@ -13,6 +13,8 @@ on:
     paths:
       - .github/workflows/dependencies.yml
       - .github/renovate.json5
+      - .github/renovate-node
+      - .github/renovate-cmd
 
   # Refresh the dashboard after a Renovate update is merged. Run the trusted
   # base-branch workflow only; never check out or execute the PR's code.
@@ -65,6 +67,18 @@ jobs:
         )
       )
     steps:
+      # Always execute trusted default-branch code, including pull_request_target.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Find available Node runtime updates
+        id: node
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/renovate-node catalog >> "$GITHUB_OUTPUT"
+
       - name: Create installation token
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -99,6 +113,9 @@ jobs:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           RENOVATE_AUTODISCOVER: 'false'
           RENOVATE_ONBOARDING: 'false'
+          # Only versions with both musl builds and rules_nodejs support may be proposed.
+          RENOVATE_PACKAGE_RULES: ${{ steps.node.outputs.rules }}
+          RENOVATE_CUSTOM_ENV_VARIABLES: ${{ steps.node.outputs.environment }}
           RENOVATE_REQUIRE_CONFIG: required
           # Allow only the repository's dispatcher with one subcommand, without
           # a shell executor. The dispatcher rejects unknown subcommands.
