@@ -45,13 +45,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5
+      - uses: bazel-contrib/setup-bazel@104e3eea9447cdaa4b00d0fb46191a3985d26ab3 # 0.19.1
         with:
-          install_args: ${{ matrix.os == 'windows' && 'bazel' || '' }}
+          bazelisk-version: '1.x'
 
       - name: Check licenses and lint
         if: matrix.os != 'windows'
-        run: aspect ci check
+        run: |
+          bazel run //tools:reuse -- --root "$GITHUB_WORKSPACE" lint
+          bazel build --config=lint --@aspect_rules_lint//lint:fail_on_violation=true --output_groups=rules_lint_human //:starlark_sources
 
       - id: build
         shell: bash
@@ -111,26 +113,8 @@ jobs:
           pattern: build-*
           merge-multiple: true
           path: dist/release
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5
-        with:
-          install_args: github:aspect-build/aspect-cli
-      - name: Verify and merge build artifacts
-        shell: bash
-        env:
-          HRC_VERSION: ${{ needs.build.outputs.version }}
-        run: |
-          cd dist/release
-          : > SHASUMS256.txt
-          for target in amd64-linux arm64-linux amd64-darwin arm64-darwin amd64-windows arm64-windows; do
-            manifest="SHASUMS256-$target.txt"
-            [[ $(wc -l < "$manifest") -eq 1 ]]
-            read -r digest archive < "$manifest"
-            [[ "$archive" == "hrc-$target-$HRC_VERSION.tar.gz" ]]
-            sha256sum --check "$manifest"
-            cat "$manifest" >> SHASUMS256.txt
-          done
-          sort -o SHASUMS256.txt SHASUMS256.txt
-      - run: aspect ci release
+      - name: Verify and publish release
+        run: bash tools/release.sh
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

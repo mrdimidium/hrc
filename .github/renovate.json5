@@ -15,12 +15,9 @@
   minimumReleaseAge: "7 days",
   prConcurrentLimit: 10,
 
-  // Mise lockfile updates use safe mode rather than unsafe execution.
-  constraints: { mise: ">=2026.7.12" },
-
   enabledManagers: [
     "gomod", "pip_requirements",
-    "github-actions", "mise", "bazel-module", "custom.regex",
+    "github-actions", "bazelisk", "bazel-module", "custom.regex",
   ],
   separateMajorMinor: true,
 
@@ -103,7 +100,7 @@
       skipArtifactsUpdate: true,
       postUpgradeTasks: {
         commands: [".github/renovate-cmd python-lock", ".github/renovate-cmd bazel-lock"],
-        installTools: { mise: {} },
+        installTools: { bazelisk: {} },
         executionMode: "branch",
         fileFilters: ["tools/requirements.txt", "MODULE.bazel.lock"],
       },
@@ -117,8 +114,8 @@
     },
 
     {
-      groupName: "mise",
-      matchManagers: ["mise"],
+      groupName: "bazel",
+      matchManagers: ["bazelisk"],
       matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
     },
 
@@ -145,15 +142,15 @@
       minimumReleaseAgeBehaviour: "timestamp-optional",
     },
     {
-      matchManagers: ["bazel-module", "custom.regex"],
+      matchManagers: ["bazelisk", "bazel-module", "custom.regex"],
       // Other regex managers must not trigger Bazel lockfile generation.
       // JSONata sees the internal name "regex", not the matchManagers alias.
-      matchJsonata: ['manager = "bazel-module" or (manager = "regex" and depType = "bazel-toolchain")'],
-      // Use our mise-pinned Bazel for both module and toolchain lockfile updates.
+      matchJsonata: ['manager = "bazelisk" or manager = "bazel-module" or (manager = "regex" and depType = "bazel-toolchain")'],
+      // Bazelisk reads the single Bazel pin from .bazelversion.
       skipArtifactsUpdate: true,
       postUpgradeTasks: {
         commands: [".github/renovate-cmd bazel-lock"],
-        installTools: { mise: {} },
+        installTools: { bazelisk: {} },
         executionMode: "branch",
         fileFilters: ["MODULE.bazel.lock"],
       },

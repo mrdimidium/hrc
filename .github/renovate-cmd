@@ -12,11 +12,11 @@ fi
 case "$1" in
     python-lock)
         cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
-        exec mise --yes exec bazel -- bazel run //tools:requirements.update
+        exec bazel run //tools:requirements.update
         ;;
     bazel-lock)
         cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
-        exec mise --yes exec bazel -- bazel mod deps --lockfile_mode=update
+        exec bazel mod deps --lockfile_mode=update
         ;;
     *)
         printf 'Unknown command: %s\n' "$1" >&2

@@ -31,13 +31,13 @@ each GitHub runner handles one job at a time, requiring multiple instances.
 
 ## Installation
 
-See the [installation guide](./docs/installation.md) for macOS, Linux, and Windows,
-then [configure and manage the service](./docs/usage.md).
+See the [installation guide](./installation.md) for macOS, Linux, and Windows,
+then [configure and manage the service](./usage.md).
 
 ## License
 
-Source code is licensed under [BSD-3-Clause](./LICENSE). Documentation is
-licensed under [CC-BY-4.0](./LICENSES/CC-BY-4.0.txt).
+Source code is licensed under [BSD-3-Clause](../LICENSE). Documentation is
+licensed under [CC-BY-4.0](../LICENSES/CC-BY-4.0.txt).
 
 The bundled GitHub runner is MIT licensed; its license and .NET dependency
 notices are included in the runner payload.

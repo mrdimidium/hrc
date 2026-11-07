@@ -5,6 +5,7 @@ version = 1
 
 [[annotations]]
 path = [
+  ".bazelversion",
   ".gitattributes",
   ".gitignore",
   ".gitmodules",
@@ -14,7 +15,6 @@ path = [
   "cmd/pkg/hrc.json",
   "go.mod",
   "go.sum",
-  "mise.lock",
   "tools/requirements.txt",
 ]
 precedence = "aggregate"
@@ -22,6 +22,6 @@ SPDX-FileCopyrightText = "2026 Nikolay Govorov"
 SPDX-License-Identifier = "BSD-3-Clause"
 
 [[annotations]]
-path = ["README.md", "AGENTS.md", "CHANGELOG.md", "docs/*"]
+path = ["AGENTS.md", "docs/*"]
 SPDX-FileCopyrightText = "2026 Nikolay Govorov"
 SPDX-License-Identifier = "CC-BY-4.0"
