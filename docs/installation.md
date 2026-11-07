@@ -3,6 +3,7 @@
 ## Contents
 
 - [Manual installation](#manual-installation)
+  - [Prerequisites](#prerequisites)
   - [Download](#download)
   - [Installation](#installation-1)
   - [Upgrading](#upgrading)
@@ -11,8 +12,72 @@
 ## Manual installation
 
 Use a fresh working directory and the same shell session. After installation,
-follow [configuration and operation](./usage.md) to configure and start the service.
-For an existing installation, follow the [upgrade procedure](#upgrading).
+follow [configuration and operation](./usage.md) to configure and start the
+service. For an existing installation, follow the
+[upgrade procedure](#upgrading).
+
+### Prerequisites
+
+Release archives include the Worker's .NET 8 runtime and Node.js 20/24. A
+separate .NET runtime, SDK or Node.js installation is not required.
+
+Install Git and any other tools needed by your workflows separately. Docker is
+needed only for Linux container jobs, service containers and container actions.
+
+Linux archives require glibc; Alpine/musl hosts are not supported.
+
+**Windows**
+
+Run PowerShell as Administrator. `tar` is included with current Windows
+versions. Download WinSW 2.x (x64 example):
+
+```powershell
+New-Item -ItemType Directory -Force C:\Downloads | Out-Null
+Invoke-WebRequest 'https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe' -OutFile C:\Downloads\WinSW-x64.exe
+```
+
+Verify the downloaded WinSW executable before using it.
+
+**macOS**
+
+```sh
+# macOS 13.5 or later: no additional packages required.
+```
+
+**Ubuntu / Debian**
+
+```sh
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl tar gzip libc6 libgcc-s1 \
+    libstdc++6 libkrb5-3 libgssapi-krb5-2 tzdata zlib1g
+
+. /etc/os-release
+if [ "$ID" = ubuntu ] && [ "$VERSION_ID" = 22.04 ]; then
+    sudo apt-get install -y libicu70 libssl3 liblttng-ust1
+elif [ "$ID" = ubuntu ] && [ "$VERSION_ID" = 24.04 ]; then
+    sudo apt-get install -y libicu74 libssl3t64 liblttng-ust1t64
+elif [ "$ID" = debian ] && [ "$VERSION_ID" = 12 ]; then
+    sudo apt-get install -y libicu72 libssl3 liblttng-ust1
+elif [ "$ID" = debian ] && [ "$VERSION_ID" = 13 ]; then
+    sudo apt-get install -y libicu76 libssl3t64 liblttng-ust1t64
+else
+    printf 'Package versions for %s %s are not listed here.\n' "$ID" "$VERSION_ID" >&2
+fi
+```
+
+**RHEL / AlmaLinux / Rocky Linux / CentOS Stream / Fedora**
+
+```sh
+sudo dnf install -y ca-certificates curl tar gzip glibc libgcc libstdc++ \
+    krb5-libs tzdata zlib openssl-libs libicu lttng-ust
+```
+
+**openSUSE Leap 16**
+
+```sh
+sudo zypper -n install ca-certificates curl tar gzip glibc libgcc_s1 \
+    libstdc++6 krb5 timezone zlib libopenssl3 libicu lttng-ust
+```
 
 ### Download
 
@@ -46,9 +111,6 @@ Get-FileHash $archive -Algorithm SHA256
 ```
 
 Compare the hash with the archive's entry in `SHASUMS256.txt` before continuing.
-On Windows, also download and verify a compatible
-[WinSW 2.x executable](https://github.com/winsw/winsw/tree/v2); the example below
-uses `C:\Downloads\WinSW-x64.exe`.
 
 **Optional: verify build provenance**
 
@@ -110,8 +172,8 @@ sudo install -m 0755 -o root -g root services/hrc.alpine /etc/init.d/hrc
 
 **macOS**
 
-The preinstall hook prepares the account and directories and unloads an
-existing launchd service.
+The preinstall hook prepares the account and directories and unloads an existing
+launchd service.
 
 ```sh
 sudo ./scripts/preinstall.sh
@@ -173,21 +235,23 @@ Continue with [configuration and operation](./usage.md).
 ### Upgrading
 
 [Download, verify, and extract](#download) a new release, then run the commands
-below from the extracted directory. Keep existing configuration, secrets and data;
-do not repeat the configuration examples in the [usage guide](./usage.md#configuration).
+below from the extracted directory. Keep existing configuration, secrets and
+data; do not repeat the configuration examples in the
+[usage guide](./usage.md#configuration).
 
 **Linux**
 
-The preinstall hook stops the systemd/OpenRC service, retaining enablement.
-For other init systems, stop the controller yourself. Remove the old runtime:
+The preinstall hook stops the systemd/OpenRC service, retaining enablement. For
+other init systems, stop the controller yourself. Remove the old runtime:
 
 ```sh
 sudo ./scripts/preinstall.sh
 sudo rm -rf /usr/local/lib/hrc
 ```
 
-Repeat the file and service definition commands from [installation](#installation-1),
-then run `sudo systemctl start hrc.service` or `sudo rc-service hrc start`.
+Repeat the file and service definition commands from
+[installation](#installation-1), then run `sudo systemctl start hrc.service` or
+`sudo rc-service hrc start`.
 
 **macOS**
 
@@ -198,8 +262,8 @@ sudo ./scripts/preinstall.sh
 sudo rm -rf /usr/local/lib/hrc
 ```
 
-Repeat the file and launchd definition commands from [installation](#installation-1),
-then start:
+Repeat the file and launchd definition commands from
+[installation](#installation-1), then start:
 
 ```sh
 sudo launchctl bootstrap system /Library/LaunchDaemons/org.hrc.plist
@@ -216,21 +280,21 @@ $dataRoot = "$env:ProgramData\hrc"
 Remove-Item "$installRoot\lib\hrc" -Recurse -Force
 ```
 
-Repeat the program file and WinSW XML copy commands from [installation](#installation-1),
-then `Start-Service hrc`. Do not recreate the directories or configuration, or
-register WinSW again.
+Repeat the program file and WinSW XML copy commands from
+[installation](#installation-1), then `Start-Service hrc`. Do not recreate the
+directories or configuration, or register WinSW again.
 
 ### Removal
 
 Before deleting installed files, stop and disable or unregister the service.
 Configuration, secrets, accounts and build data can be retained.
 
-- **systemd:** `sudo systemctl disable --now hrc.service`. After deleting the unit,
-  run `sudo systemctl daemon-reload`.
+- **systemd:** `sudo systemctl disable --now hrc.service`. After deleting the
+  unit, run `sudo systemctl daemon-reload`.
 - **OpenRC:** `sudo rc-service hrc stop` and `sudo rc-update del hrc default`
   (and remove it from any other runlevels).
-- **launchd:** `sudo launchctl bootout system/org.hrc` (omit if already unloaded)
-  and `sudo launchctl disable system/org.hrc`.
+- **launchd:** `sudo launchctl bootout system/org.hrc` (omit if already
+  unloaded) and `sudo launchctl disable system/org.hrc`.
 - **Windows (PowerShell as Administrator):**
   `& "$env:ProgramFiles\hrc\hrc-service.exe" stopwait` and
   `& "$env:ProgramFiles\hrc\hrc-service.exe" uninstall`.

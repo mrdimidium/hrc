@@ -400,6 +400,11 @@ func TestWorkerExistingConfiguration(t *testing.T) {
 	if got, err := os.ReadFile(path); err != nil || string(got) != string(settings) {
 		t.Fatalf("existing registration changed: %q, %v", got, err)
 	}
+	// Let the child exit normally before cleanup calls Close. On Windows,
+	// killing a process concurrently with its exit can return access denied.
+	if result, err := waitTestWorker(t, w); result != Succeeded || err != nil {
+		t.Fatalf("Wait = %v, %v", result, err)
+	}
 }
 
 func TestWorkerLeavesUnrelatedFiles(t *testing.T) {
