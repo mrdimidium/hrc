@@ -10,6 +10,10 @@ if [[ $# -ne 1 ]]; then
 fi
 
 case "$1" in
+    python-lock)
+        cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+        exec mise --yes exec bazel -- bazel run //tools:requirements.update
+        ;;
     bazel-lock)
         cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
         exec mise --yes exec bazel -- bazel mod deps --lockfile_mode=update

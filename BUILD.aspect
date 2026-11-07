@@ -39,7 +39,10 @@ def _verify(ctx, directory):
             fail("SHA256 mismatch: " + name)
 
 def _ci_check(ctx):
-    _exec(ctx, ["reuse", "lint"])
+    workspace = _capture(ctx, ["bazel", "info", "workspace"])
+    if not workspace.status.success:
+        fail("Could not determine the Bazel workspace root")
+    _exec(ctx, ["bazel", "run", "//tools:reuse", "--", "--root", workspace.stdout.strip(), "lint"])
     _exec(ctx, ["aspect", "lint", "--strategy=hard", "--config=lint", "--", "//:starlark_sources"])
     return 0
 

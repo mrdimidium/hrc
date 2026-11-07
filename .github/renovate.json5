@@ -18,8 +18,14 @@
   // Mise lockfile updates use safe mode rather than unsafe execution.
   constraints: { mise: ">=2026.7.12" },
 
-  enabledManagers: ["gomod", "github-actions", "mise", "bazel-module", "custom.regex"],
+  enabledManagers: [
+    "gomod", "pip_requirements",
+    "github-actions", "mise", "bazel-module", "custom.regex",
+  ],
   separateMajorMinor: true,
+
+  // Only edit the input; Bazel regenerates the hashed transitive lockfile.
+  pip_requirements: { managerFilePatterns: ["/^tools/requirements\\.in$/"] },
 
   customManagers: [
     {
@@ -78,6 +84,29 @@
       // SDK updates belong to Bazel; indirect modules follow direct updates.
       matchDepTypes: ["golang", "toolchain", "indirect"],
       enabled: false,
+    },
+
+    {
+      groupName: "python tools",
+      matchManagers: ["pip_requirements"],
+      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+    },
+    {
+      // managerFilePatterns adds to defaults; do not edit the generated lock.
+      matchManagers: ["pip_requirements"],
+      matchFileNames: ["!tools/requirements.in"],
+      enabled: false,
+    },
+    {
+      matchManagers: ["pip_requirements"],
+      matchFileNames: ["tools/requirements.in"],
+      skipArtifactsUpdate: true,
+      postUpgradeTasks: {
+        commands: [".github/renovate-cmd python-lock", ".github/renovate-cmd bazel-lock"],
+        installTools: { mise: {} },
+        executionMode: "branch",
+        fileFilters: ["tools/requirements.txt", "MODULE.bazel.lock"],
+      },
     },
 
     {

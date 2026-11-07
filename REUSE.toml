@@ -15,6 +15,7 @@ path = [
   "go.mod",
   "go.sum",
   "mise.lock",
+  "tools/requirements.txt",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Nikolay Govorov"

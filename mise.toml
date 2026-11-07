@@ -5,9 +5,7 @@
 lockfile = true
 
 [tools]
-uv = "0.13.6"
 bazel = "9.3.1"
-"pipx:reuse" = { version = "6.3.0", extras = "charset-normalizer" }
 
 [tools."github:aspect-build/aspect-cli"]
 version = "v2026.44.7"

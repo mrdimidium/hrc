@@ -31,6 +31,24 @@ use_repo(python, "python_3_13_host", "pythons_hub")
 
 register_toolchains("@pythons_hub//:all")
 
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    hub_name = "python_tools",
+    python_version = "3.13",
+    requirements_lock = "//tools:requirements.txt",
+    target_platforms = [
+        "linux_x86_64",
+        "linux_aarch64",
+        "osx_x86_64",
+        "osx_aarch64",
+        "windows_x86_64",
+        "windows_aarch64",
+    ],
+    download_only = True,
+    experimental_index_url = "https://pypi.org/simple",
+)
+use_repo(pip, "python_tools")
+
 # .NET
 dotnet = use_extension("@rules_dotnet//dotnet:extensions.bzl", "dotnet")
 
