@@ -18,7 +18,7 @@
   // Mise lockfile updates use safe mode rather than unsafe execution.
   constraints: { mise: ">=2026.7.12" },
 
-  enabledManagers: ["github-actions", "mise", "bazel-module", "custom.regex"],
+  enabledManagers: ["gomod", "github-actions", "mise", "bazel-module", "custom.regex"],
   separateMajorMinor: true,
 
   customManagers: [
@@ -64,6 +64,22 @@
     },
   },
   packageRules: [
+    {
+      groupName: "go modules",
+      matchManagers: ["gomod"],
+      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+    },
+    {
+      matchManagers: ["gomod"],
+      constraintsFiltering: "strict",
+    },
+    {
+      matchManagers: ["gomod"],
+      // SDK updates belong to Bazel; indirect modules follow direct updates.
+      matchDepTypes: ["golang", "toolchain", "indirect"],
+      enabled: false,
+    },
+
     {
       // Major updates deliberately remain ungrouped for individual review.
       groupName: "github actions",
