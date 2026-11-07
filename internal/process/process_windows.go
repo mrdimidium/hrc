@@ -6,10 +6,12 @@
 package process
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"strconv"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
@@ -45,6 +47,33 @@ func (p *Process) attach() error {
 	}
 	defer windows.CloseHandle(process)
 	return windows.AssignProcessToJobObject(p.group.platform.job, process)
+}
+
+// TerminateProcess is asynchronous. A subsequent environment scan can still
+// find the dying process, and killing an already terminated process returns
+// ERROR_ACCESS_DENIED, not os.ErrProcessDone. Wait on the same process handle
+// before accepting either success or access denied; a live, unkillable process
+// must still be reported as an error. Share the scanner's cleanup deadline.
+func killTrackedProcess(p *os.Process, deadline time.Time) error {
+	killErr := p.Kill()
+	if killErr != nil && !errors.Is(killErr, windows.ERROR_ACCESS_DENIED) {
+		return killErr
+	}
+	var waitErr error
+	handleErr := p.WithHandle(func(handle uintptr) {
+		remaining := max(time.Until(deadline), 0)
+		timeout := uint32((remaining + time.Millisecond - 1) / time.Millisecond)
+		state, err := windows.WaitForSingleObject(windows.Handle(handle), timeout)
+		if err != nil {
+			waitErr = err
+		} else if state != windows.WAIT_OBJECT_0 {
+			waitErr = errors.New("process termination timed out")
+		}
+	})
+	if handleErr != nil || waitErr != nil {
+		return errors.Join(killErr, handleErr, waitErr)
+	}
+	return nil
 }
 
 func testDetachDescendant(cmd *exec.Cmd) {

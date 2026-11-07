@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strconv"
 	"syscall"
+	"time"
 )
 
 // configure passes Files as descriptors 3 and up, and starts the child in a
@@ -24,6 +25,10 @@ func (p *Process) configure(files []*os.File) error {
 }
 
 func (p *Process) attach() error { return nil }
+
+func killTrackedProcess(p *os.Process, _ time.Time) error {
+	return p.Kill()
+}
 
 func testDetachDescendant(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

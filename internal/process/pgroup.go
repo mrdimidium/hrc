@@ -120,7 +120,7 @@ func (g *PGroup) killTracked() error {
 		for _, pid := range pids {
 			p, err := os.FindProcess(pid)
 			if err == nil {
-				err = p.Kill()
+				err = killTrackedProcess(p, deadline)
 				p.Release()
 			}
 			if err != nil && !errors.Is(err, os.ErrProcessDone) && !errors.Is(err, syscall.ESRCH) {
