@@ -56,7 +56,7 @@ service(
     deps = [
         "//:docs",
         "//:licenses",
-        "//runner",
+        "//internal/worker:runner",
     ],
     os = OS,
     arch = ARCH,

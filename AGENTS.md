@@ -38,9 +38,9 @@ directly.
   ephemeral workers.
 - `internal/worker/`: a thin wrapper around the Worker from the official .NET
   implementation of the GitHub runner. A worker accepts a job description,
-  performs exactly one task, and then terminates.
-- `runner/`: A synchronizable fork of the official GitHub runner, repackaged for
-  our needs.
+  performs exactly one task, and then terminates. This package also contains
+  the build rules, patches, and runtime tests for our synchronizable fork of
+  the upstream Worker, repackaged for our needs.
 
 ## Issue and PR Guidelines
 

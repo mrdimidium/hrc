@@ -86,12 +86,12 @@ http_archive(
     urls = ["https://github.com/actions/runner/archive/refs/tags/v%s.tar.gz" % RUNNER_VERSION],
     sha256 = "3b7549b6cd109cd534de3e904cb257cd8447c1d00dd96d2242b7747b3473ce1f",
     strip_prefix = "runner-%s/src" % RUNNER_VERSION,
-    build_file_content = 'load("@hrc//runner:runner.bzl", "runner_sources")\nrunner_sources(version = "%s")\n' % RUNNER_VERSION,
+    build_file_content = 'load("@hrc//internal/worker:runner.bzl", "runner_sources")\nrunner_sources(version = "%s")\n' % RUNNER_VERSION,
     patches = [
-        "//runner:patch/runtime-config.patch",
-        "//runner:patch/diagnostics.patch",
-        "//runner:patch/single-file.patch",
-        "//runner:patch/resources-layout.patch",
+        "//internal/worker:patch/runtime-config.patch",
+        "//internal/worker:patch/diagnostics.patch",
+        "//internal/worker:patch/single-file.patch",
+        "//internal/worker:patch/resources-layout.patch",
     ],
     patch_args = ["-p2"],
 )

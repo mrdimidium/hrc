@@ -28,7 +28,6 @@ filegroup(
 
 # gazelle:prefix gilti.dev/hrc
 # gazelle:exclude dist
-# gazelle:exclude runner
 
 gazelle(name = "gazelle")
 
@@ -39,8 +38,8 @@ test_suite(
         "//internal/listener:listener_test",
         "//internal/process:process_test",
         "//internal/runtime:runtime_test",
+        "//internal/worker:runtime_config_test",
         "//internal/worker:worker_test",
-        "//runner:runtime_config_test",
         "//tools/rules_service:scripts_test",
     ],
 )
@@ -55,8 +54,7 @@ filegroup(
         "//internal/listener:BUILD.bazel",
         "//internal/process:BUILD.bazel",
         "//internal/runtime:BUILD.bazel",
-        "//internal/worker:BUILD.bazel",
-        "//runner:starlark_sources",
+        "//internal/worker:starlark_sources",
         "//tools:starlark_sources",
         "//tools/format:BUILD.bazel",
         "//tools/rules_msbuild:starlark_sources",
@@ -70,7 +68,7 @@ filegroup(
 
 alias(
     name = "runner",
-    actual = "//runner",
+    actual = "//internal/worker:runner",
     tags = ["manual"],
 )
 
