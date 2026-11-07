@@ -27,6 +27,17 @@
   customManagers: [
     {
       customType: "regex",
+      description: "Prepare upstream Worker updates for manual compatibility review",
+      depTypeTemplate: "runner-source",
+      datasourceTemplate: "github-releases",
+      depNameTemplate: "actions/runner",
+      versioningTemplate: "semver",
+      extractVersionTemplate: "^v(?<version>\\d+\\.\\d+\\.\\d+)$",
+      managerFilePatterns: ["/^MODULE\\.bazel$/"],
+      matchStrings: ['RUNNER_VERSION = "(?<currentValue>\\d+\\.\\d+\\.\\d+)"'],
+    },
+    {
+      customType: "regex",
       description: "Update Worker Node runtimes within their manually selected majors",
       depTypeTemplate: "node-runtime",
       datasourceTemplate: "node-version",
@@ -190,6 +201,25 @@
       skipArtifactsUpdate: true,
       postUpgradeTasks: {
         commands: [".github/renovate-cmd node-lock"],
+        installTools: { bazelisk: {} },
+        executionMode: "branch",
+        fileFilters: ["MODULE.bazel", "MODULE.bazel.lock"],
+      },
+    },
+
+    {
+      matchManagers: ["custom.regex"],
+      matchDepTypes: ["runner-source"],
+      draftPR: true,
+      automerge: false,
+      // Prepare the draft immediately; compatibility is reviewed by hand.
+      minimumReleaseAge: "0 days",
+      prBodyNotes: [
+        "Manual review required: compare upstream changes with `internal/listener`, verify the semantics of `internal/worker/patch/`, and check Node runtime requirements before marking this draft ready.",
+      ],
+      skipArtifactsUpdate: true,
+      postUpgradeTasks: {
+        commands: [".github/renovate-cmd runner-lock"],
         installTools: { bazelisk: {} },
         executionMode: "branch",
         fileFilters: ["MODULE.bazel", "MODULE.bazel.lock"],
