@@ -1,7 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
 # SPDX-License-Identifier: BSD-3-Clause
 
-build --workspace_status_command="uv run --no-project --python 3.13 python tools/workspace_status.py"
+common --enable_platform_specific_config
+
+# Workspace status runs on the host, including during cross-compilation.
+build:linux --workspace_status_command="sh tools/workspace_status.sh"
+build:macos --workspace_status_command="sh tools/workspace_status.sh"
+build:windows --workspace_status_command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/workspace_status.ps1"
 build --stamp
 build --compilation_mode=opt
 

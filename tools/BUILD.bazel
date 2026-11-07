@@ -22,7 +22,7 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-exports_files(glob(["*.py"]) + BZLS)
+exports_files(BZLS)
 
 platform(
     name = "linux_amd64",
