@@ -16,6 +16,7 @@ bazel_dep(name = "bazel_skylib", version = "1.9.2")
 
 # Go
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+
 # renovate: datasource=golang-version depName=go
 go_sdk.download(version = "1.27.2")
 
@@ -32,7 +33,8 @@ register_toolchains("@pythons_hub//:all")
 
 # .NET
 dotnet = use_extension("@rules_dotnet//dotnet:extensions.bzl", "dotnet")
-# renovate: datasource=dotnet-version depName=dotnet-sdk
+
+# Renovate selects SDKs from the pinned rules_dotnet release's support table.
 dotnet.toolchain(dotnet_version = "10.0.400")
 use_repo(dotnet, "dotnet_toolchains")
 use_repo(

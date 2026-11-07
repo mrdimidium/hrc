@@ -32,7 +32,37 @@
         '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)[ \\t]*\\r?\\n[^"\\r\\n]*"(?<currentValue>[^"\\r\\n]+)"',
       ],
     },
+    {
+      customType: "regex",
+      description: "Update .NET SDKs supported by the pinned rules_dotnet release",
+      depTypeTemplate: "bazel-toolchain",
+      datasourceTemplate: "custom.rules-dotnet-sdk",
+      depNameTemplate: "dotnet-sdk",
+      versioningTemplate: "semver",
+      registryUrlTemplate: "https://raw.githubusercontent.com/bazel-contrib/rules_dotnet/v{{{rulesVersion}}}/dotnet/private/sdk/versions.bzl",
+      managerFilePatterns: ["/(^|/)MODULE\\.bazel$/"],
+      matchStringsStrategy: "recursive",
+      // Carry the BCR module version into the SDK's registry URL, but replace
+      // only the inner SDK declaration. New ruleset support follows its merge.
+      matchStrings: [
+        'bazel_dep\\(name = "rules_dotnet", version = "(?<rulesVersion>[^"\\r\\n]+)"\\)[\\s\\S]*',
+        'dotnet\\.toolchain\\(dotnet_version = "(?<currentValue>[^"\\r\\n]+)"\\)',
+      ],
+    },
   ],
+  customDatasources: {
+    "rules-dotnet-sdk": {
+      format: "plain",
+      transformTemplates: [
+        // Plain datasource input is one release.version per trimmed text line.
+        '$match($join(releases.version, "\\n"), /"(\\d+\\.\\d+\\.\\d+)": \\{([\\s\\S]*?)\\n\\},/)',
+        // Keep only version blocks containing all six project platforms.
+        '($platforms := ["aarch64-apple-darwin", "x86_64-apple-darwin", "arm64-pc-windows-msvc", "x86_64-pc-windows-msvc", "arm64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]; $filter($, function($block) { $count($filter($platforms, function($platform) { $contains($block.groups[1], "\\\"" & $platform & "\\\": {") })) = $count($platforms) }))',
+        // Major SDK migrations remain deliberate, independent of the ruleset.
+        '{"releases": [$[$split(groups[0], ".")[0] = $split("{{{currentValue}}}", ".")[0]].{"version": groups[0]}]}',
+      ],
+    },
+  },
   packageRules: [
     {
       // Major updates deliberately remain ungrouped for individual review.
@@ -62,6 +92,11 @@
       matchManagers: ["bazel-module"],
       // BCR releases may lack timestamps; do not hold those updates indefinitely.
       // Releases with a known timestamp still observe minimumReleaseAge.
+      minimumReleaseAgeBehaviour: "timestamp-optional",
+    },
+    {
+      matchDatasources: ["custom.rules-dotnet-sdk"],
+      // The support table has no release dates; do not block SDKs indefinitely.
       minimumReleaseAgeBehaviour: "timestamp-optional",
     },
     {
