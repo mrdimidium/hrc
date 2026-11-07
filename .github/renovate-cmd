@@ -42,6 +42,9 @@ case "$1" in
     python-lock)
         exec bazel run //tools:requirements.update
         ;;
+    python-refresh)
+        exec bazel run //tools:requirements.update -- --upgrade
+        ;;
     node-lock)
         .github/renovate-node lock
         exec bazel mod deps --lockfile_mode=update
@@ -52,6 +55,9 @@ case "$1" in
         ;;
     bazel-lock)
         exec bazel mod deps --lockfile_mode=update
+        ;;
+    bazel-refresh)
+        exec bazel mod deps --lockfile_mode=refresh
         ;;
     *)
         printf 'Unknown command: %s\n' "$1" >&2

@@ -15,6 +15,12 @@
   minimumReleaseAge: "7 days",
   prConcurrentLimit: 10,
 
+  // The dependency workflow runs daily at 04:00 UTC; leave room for queue delays.
+  lockFileMaintenance: {
+    enabled: true,
+    schedule: ["before 6am on monday"],
+  },
+
   enabledManagers: [
     "gomod", "pip_requirements",
     "github-actions", "bazelisk", "bazel-module", "custom.regex",
@@ -102,9 +108,21 @@
     },
     {
       matchManagers: ["gomod"],
-      // SDK updates belong to Bazel; indirect modules follow direct updates.
-      matchDepTypes: ["golang", "toolchain", "indirect"],
+      // SDK updates belong to Bazel, not go.mod.
+      matchDepTypes: ["golang", "toolchain"],
       enabled: false,
+    },
+    {
+      matchManagers: ["gomod"],
+      matchDepTypes: ["indirect"],
+      enabled: true,
+      schedule: ["before 6am on monday"],
+    },
+    {
+      groupName: "go indirect modules",
+      matchManagers: ["gomod"],
+      matchDepTypes: ["indirect"],
+      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
     },
 
     {
@@ -177,6 +195,23 @@
         installTools: { bazelisk: {} },
         executionMode: "branch",
         fileFilters: ["MODULE.bazel.lock"],
+      },
+    },
+
+    {
+      // These native managers provide the weekly maintenance branch. The Python
+      // lock belongs to Bazel too; pip_requirements has no native maintenance.
+      matchManagers: ["bazelisk", "bazel-module"],
+      matchUpdateTypes: ["lockFileMaintenance"],
+      skipArtifactsUpdate: true,
+      prBodyNotes: [
+        "Refreshes Python transitive dependencies within requirements.in constraints and the Bazel lockfile. pip-compile may select new transitive majors and does not enforce Renovate's minimumReleaseAge.",
+      ],
+      postUpgradeTasks: {
+        commands: [".github/renovate-cmd python-refresh", ".github/renovate-cmd bazel-refresh"],
+        installTools: { bazelisk: {} },
+        executionMode: "branch",
+        fileFilters: ["tools/requirements.txt", "MODULE.bazel.lock"],
       },
     },
 
