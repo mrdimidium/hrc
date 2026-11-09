@@ -45,6 +45,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Authenticate GitHub downloads
+        shell: bash
+        env:
+          GH_DOWNLOAD_TOKEN: ${{ github.token }}
+        run: |
+          umask 077
+          netrc="$RUNNER_TEMP/bazel-github.netrc"
+          printf 'machine github.com\nlogin x-access-token\npassword %s\n' "$GH_DOWNLOAD_TOKEN" > "$netrc"
+          printf 'NETRC=%s\n' "$netrc" >> "$GITHUB_ENV"
+
       - uses: bazel-contrib/setup-bazel@104e3eea9447cdaa4b00d0fb46191a3985d26ab3 # 0.19.1
         with:
           bazelisk-version: '1.x'
@@ -101,6 +111,11 @@ jobs:
           compression-level: 0
           retention-days: 7
 
+      - name: Remove download credentials
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/bazel-github.netrc"
+
   release:
     needs: [build]
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/release-'))
@@ -114,6 +129,15 @@ jobs:
           pattern: build-*
           merge-multiple: true
           path: dist/release
+      - name: Authenticate GitHub downloads
+        env:
+          GH_DOWNLOAD_TOKEN: ${{ github.token }}
+        run: |
+          umask 077
+          netrc="$RUNNER_TEMP/bazel-github.netrc"
+          printf 'machine github.com\nlogin x-access-token\npassword %s\n' "$GH_DOWNLOAD_TOKEN" > "$netrc"
+          printf 'NETRC=%s\n' "$netrc" >> "$GITHUB_ENV"
+
       - uses: bazel-contrib/setup-bazel@104e3eea9447cdaa4b00d0fb46191a3985d26ab3 # 0.19.1
         with:
           bazelisk-version: '1.x'
@@ -124,3 +148,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           HRC_VERSION: ${{ needs.build.outputs.version }}
           HRC_ARTIFACT_SOURCE: https://github.com/${{ github.repository }}/releases/download/${{ github.ref == 'refs/heads/main' && 'dev' || github.ref_name }}
+
+      - name: Remove download credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/bazel-github.netrc"
