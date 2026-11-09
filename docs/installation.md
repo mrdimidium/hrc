@@ -15,25 +15,25 @@
 The `dimidiumlabs.hrc` collection provides two roles: `install` and `remove`.
 Each collection archive pins the filenames and SHA-256 hashes of one hrc
 release's binaries. On the Ansible controller (Linux or macOS), use a fresh
-working directory to download and install the collection from the latest
-release:
+working directory with `curl` and `jq` installed to download and install the
+collection from the latest release:
 
 ```sh
-version=$(curl -fsL https://github.com/mrdimidium/hrc/releases/latest/download/VERSION)
+version=$(curl -fsL https://github.com/mrdimidium/hrc/releases/latest/download/manifest.json | jq -er '.version')
 release="https://github.com/mrdimidium/hrc/releases/download/release-$version"
 archive="ansible-collection-$version.tar.gz"
 
-curl -fLO "$release/$archive" -O "$release/SHASUMS256.txt"
+curl -fLO "$release/$archive" -O "$release/SHASUMS256"
 case $(uname -s) in
-    Darwin) shasum -a 256 -c --ignore-missing SHASUMS256.txt ;;
-    *) sha256sum -c --ignore-missing SHASUMS256.txt ;;
+    Darwin) shasum -a 256 -c --ignore-missing SHASUMS256 ;;
+    *) sha256sum -c --ignore-missing SHASUMS256 ;;
 esac
 
 ansible-galaxy collection install "./$archive"
 ```
 
 Stop if download or checksum verification fails. To install a specific release,
-set `version` to its version number instead of fetching `VERSION`.
+set `version` to its version number instead of reading it from `manifest.json`.
 
 An HTTPS URL to the archive, including a mirror or S3, can also be used as a
 `type: url` entry in a collection `requirements.yml`. Verify the collection
@@ -193,15 +193,17 @@ sudo zypper -n install ca-certificates curl tar gzip glibc libgcc_s1 \
 
 **macOS / Linux / Windows (Git Bash)**
 
+Requires `curl` and `jq`.
+
 ```sh
 case $(uname -s) in Darwin) os=darwin ;; Linux) os=linux ;; MINGW*|MSYS*) os=windows ;; esac
 case ${PROCESSOR_ARCHITEW6432:-${PROCESSOR_ARCHITECTURE:-$(uname -m)}} in x86_64|AMD64) arch=amd64 ;; arm64|aarch64|ARM64) arch=arm64 ;; esac
 
-version=$(curl -fsL https://github.com/mrdimidium/hrc/releases/latest/download/VERSION)
+version=$(curl -fsL https://github.com/mrdimidium/hrc/releases/latest/download/manifest.json | jq -er '.version')
 release="https://github.com/mrdimidium/hrc/releases/download/release-$version"
 archive="hrc-$arch-$os-$version.tar.gz"
-curl -fLO "$release/$archive" -O "$release/SHASUMS256.txt"
-case $os in darwin) shasum -a 256 -c --ignore-missing SHASUMS256.txt ;; *) sha256sum -c --ignore-missing SHASUMS256.txt ;; esac
+curl -fLO "$release/$archive" -O "$release/SHASUMS256"
+case $os in darwin) shasum -a 256 -c --ignore-missing SHASUMS256 ;; *) sha256sum -c --ignore-missing SHASUMS256 ;; esac
 ```
 
 Stop if checksum verification fails.
@@ -212,15 +214,43 @@ Stop if checksum verification fails.
 $machine = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 $arch = switch ($machine) { AMD64 { 'amd64' } ARM64 { 'arm64' } }
 
-$version = (Invoke-RestMethod 'https://github.com/mrdimidium/hrc/releases/latest/download/VERSION').Trim()
+$version = (Invoke-RestMethod 'https://github.com/mrdimidium/hrc/releases/latest/download/manifest.json').version
 $release = "https://github.com/mrdimidium/hrc/releases/download/release-$version"
 $archive = "hrc-$arch-windows-$version.tar.gz"
-Invoke-WebRequest "$release/SHASUMS256.txt" -OutFile SHASUMS256.txt
+Invoke-WebRequest "$release/SHASUMS256" -OutFile SHASUMS256
 Invoke-WebRequest "$release/$archive" -OutFile $archive
 Get-FileHash $archive -Algorithm SHA256
 ```
 
-Compare the hash with the archive's entry in `SHASUMS256.txt` before continuing.
+Compare the hash with the archive's entry in `SHASUMS256` before continuing.
+
+**Verify the checksum signature**
+
+Releases produced by the signing pipeline include `SHASUMS256.asc`, a
+detached OpenPGP signature of `SHASUMS256`. Import the Dimidium Labs public
+key bundle from `https://pkg.dimidiumlabs.io/packages.gpg` into GPG and verify
+its fingerprint through an independent trusted source before trusting it.
+Then, in macOS / Linux / Git Bash:
+
+```sh
+curl -fLO "$release/SHASUMS256.asc"
+gpg --verify SHASUMS256.asc SHASUMS256
+```
+
+Stop if signature verification fails or the signing key is not trusted. A good
+signature from an unknown key does not authenticate the publisher. Verify the
+archive's checksum against this authenticated list before extracting it.
+Older releases may not have a signature.
+
+Each signed release also includes `manifest.json` (schema version 1), containing
+the product, version, full source commit, and an artifact list with filenames,
+sizes in bytes and SHA-256 hashes. Filenames are relative to the directory
+containing the manifest, so the same manifest works on either mirror. Binary archives additionally
+identify their OS and architecture. `manifest.json` is covered
+by the signed checksum list; the list and its signature are not included in
+the manifest, avoiding a circular dependency. The current GitHub `dev` download
+URLs are mutable; hashes pin the advertised contents, but old dev assets may
+be removed when the channel is updated.
 
 **Optional: verify build provenance**
 

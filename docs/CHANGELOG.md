@@ -10,7 +10,7 @@ Notable changes to hrc, in the format of
 
 - Builtin Ansible collection with install and remove roles for Linux
   (systemd/OpenRC), macOS and Windows. Release archives include the collection
-  in `SHASUMS256.txt`; binary sources can be mirrored or vendored.
+  in `SHASUMS256`; binary sources can be mirrored or vendored.
 
 ## [0.3.0] - 2026-10-28
 

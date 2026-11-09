@@ -146,6 +146,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+
+          GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
           HRC_VERSION: ${{ needs.build.outputs.version }}
           HRC_ARTIFACT_SOURCE: https://github.com/${{ github.repository }}/releases/download/${{ github.ref == 'refs/heads/main' && 'dev' || github.ref_name }}
 
