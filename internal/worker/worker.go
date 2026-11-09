@@ -22,8 +22,8 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"gilti.dev/hrc/internal/process"
-	platformruntime "gilti.dev/hrc/internal/runtime"
+	"dimidiumlabs.io/hrc/internal/process"
+	platformruntime "dimidiumlabs.io/hrc/internal/runtime"
 )
 
 // Result uses the upstream TaskResult values. Unknown means the process never

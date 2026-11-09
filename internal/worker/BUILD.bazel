@@ -18,7 +18,7 @@ go_library(
         ["*.go"],
         exclude = ["*_test.go"],
     ),
-    importpath = "gilti.dev/hrc/internal/worker",
+    importpath = "dimidiumlabs.io/hrc/internal/worker",
     visibility = ["//visibility:public"],
     deps = [
         "//internal/process",

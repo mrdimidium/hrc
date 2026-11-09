@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"sync"
 
-	"gilti.dev/hrc/internal/process"
-	"gilti.dev/hrc/internal/runtime"
+	"dimidiumlabs.io/hrc/internal/process"
+	"dimidiumlabs.io/hrc/internal/runtime"
 )
 
 // slotCount returns how many runners fit on the host, each holding quota after

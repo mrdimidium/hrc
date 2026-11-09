@@ -48,7 +48,7 @@ filegroup(
     visibility = ["//ansible:__pkg__"],
 )
 
-# gazelle:prefix gilti.dev/hrc
+# gazelle:prefix dimidiumlabs.io/hrc
 # gazelle:exclude dist
 
 gazelle(name = "gazelle")

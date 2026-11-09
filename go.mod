@@ -1,4 +1,4 @@
-module gilti.dev/hrc
+module dimidiumlabs.io/hrc
 
 go 1.27.3
 

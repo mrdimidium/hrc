@@ -18,8 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gilti.dev/hrc/internal/listener"
-	"gilti.dev/hrc/internal/worker"
+	"dimidiumlabs.io/hrc/internal/listener"
+	"dimidiumlabs.io/hrc/internal/worker"
 
 	"github.com/actions/scaleset"
 )

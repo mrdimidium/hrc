@@ -31,9 +31,9 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"gilti.dev/hrc/internal/listener"
-	"gilti.dev/hrc/internal/process"
-	"gilti.dev/hrc/internal/worker"
+	"dimidiumlabs.io/hrc/internal/listener"
+	"dimidiumlabs.io/hrc/internal/process"
+	"dimidiumlabs.io/hrc/internal/worker"
 
 	"github.com/actions/scaleset"
 )

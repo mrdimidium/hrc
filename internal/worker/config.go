@@ -14,7 +14,7 @@ import (
 	"slices"
 	"strings"
 
-	"gilti.dev/hrc/internal/process"
+	"dimidiumlabs.io/hrc/internal/process"
 )
 
 // Config describes the local runtime, regardless of how the runner is registered.

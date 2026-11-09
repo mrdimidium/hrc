@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"gilti.dev/hrc/internal/process"
+	"dimidiumlabs.io/hrc/internal/process"
 )
 
 func TestHostSchedulerWithoutQuota(t *testing.T) {

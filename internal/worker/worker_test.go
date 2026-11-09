@@ -21,7 +21,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"gilti.dev/hrc/internal/process"
+	"dimidiumlabs.io/hrc/internal/process"
 )
 
 func TestMain(m *testing.M) {

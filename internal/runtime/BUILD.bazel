@@ -11,7 +11,7 @@ go_library(
         ["*.go"],
         exclude = ["*_test.go"],
     ),
-    importpath = "gilti.dev/hrc/internal/runtime",
+    importpath = "dimidiumlabs.io/hrc/internal/runtime",
     visibility = ["//visibility:public"],
     deps = select({
         "@rules_go//go/platform:darwin": [

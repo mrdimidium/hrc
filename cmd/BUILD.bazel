@@ -13,7 +13,7 @@ go_library(
         ["*.go"],
         exclude = ["*_test.go"],
     ),
-    importpath = "gilti.dev/hrc/cmd",
+    importpath = "dimidiumlabs.io/hrc/cmd",
     visibility = ["//:__pkg__"],  # keep
     deps = [
         "//internal/listener",
@@ -33,7 +33,7 @@ go_binary(
     ],
     pure = "on",
     visibility = ["//visibility:public"],
-    x_defs = {"gilti.dev/hrc/cmd.Version": "{STABLE_HRC_VERSION}"},
+    x_defs = {"dimidiumlabs.io/hrc/cmd.Version": "{STABLE_HRC_VERSION}"},
 )
 
 go_test(

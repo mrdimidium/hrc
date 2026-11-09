@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	platformruntime "gilti.dev/hrc/internal/runtime"
+	platformruntime "dimidiumlabs.io/hrc/internal/runtime"
 )
 
 const childArg = "hrc-process-child"

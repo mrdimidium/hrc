@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	platformruntime "gilti.dev/hrc/internal/runtime"
+	platformruntime "dimidiumlabs.io/hrc/internal/runtime"
 )
 
 const trackingGroupEnv = "RUNNER_TRACKING_GROUP"
