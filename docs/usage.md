@@ -113,12 +113,12 @@ Stop: `sudo rc-service hrc stop`. Restart: `sudo rc-service hrc restart`.
 Enable, load, and check status:
 
 ```sh
-sudo launchctl enable system/org.hrc
-sudo launchctl bootstrap system /Library/LaunchDaemons/org.hrc.plist
-sudo launchctl print system/org.hrc
+sudo launchctl enable system/io.dimidiumlabs.hrc
+sudo launchctl bootstrap system /Library/LaunchDaemons/io.dimidiumlabs.hrc.plist
+sudo launchctl print system/io.dimidiumlabs.hrc
 ```
 
-Stop: `sudo launchctl bootout system/org.hrc`. To restart, boot out and bootstrap
+Stop: `sudo launchctl bootout system/io.dimidiumlabs.hrc`. To restart, boot out and bootstrap
 again. If already unloaded, only bootstrap is needed.
 
 **Windows**

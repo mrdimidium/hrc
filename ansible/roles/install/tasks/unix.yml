@@ -84,7 +84,7 @@
         cp -R runner /usr/local/lib/hrc
         chown -R root:{{ 'wheel' if _hrc_os == 'darwin' else 'root' }} /usr/local/lib/hrc
         chmod -R u=rwX,go=rX /usr/local/lib/hrc
-        install -m {{ '0755' if _hrc_os == 'linux' and ansible_facts.service_mgr == 'openrc' else '0644' }} services/{{ 'org.hrc.plist' if _hrc_os == 'darwin' else ('hrc.alpine' if ansible_facts.service_mgr == 'openrc' else 'hrc.systemd') }} {{ _hrc_path.service }}
+        install -m {{ '0755' if _hrc_os == 'linux' and ansible_facts.service_mgr == 'openrc' else '0644' }} services/{{ 'io.dimidiumlabs.hrc.plist' if _hrc_os == 'darwin' else ('hrc.alpine' if ansible_facts.service_mgr == 'openrc' else 'hrc.systemd') }} {{ _hrc_path.service }}
       args:
         chdir: "{{ _hrc_download.path }}"
       changed_when: true
@@ -158,18 +158,18 @@
           check_mode: false
 
         - name: Enable launch daemon
-          ansible.builtin.command: launchctl enable system/org.hrc
-          when: _hrc_disabled.stdout is not search('"org\.hrc" => (enabled|false)')
+          ansible.builtin.command: launchctl enable system/io.dimidiumlabs.hrc
+          when: _hrc_disabled.stdout is not search('"io\.dimidiumlabs\.hrc" => (enabled|false)')
           changed_when: true
 
         - name: Check whether launch daemon is loaded
-          ansible.builtin.command: launchctl print system/org.hrc
+          ansible.builtin.command: launchctl print system/io.dimidiumlabs.hrc
           register: _hrc_loaded
           changed_when: false
           failed_when: _hrc_loaded.rc not in [0, 113]
           check_mode: false
 
         - name: Load launch daemon
-          ansible.builtin.command: launchctl bootstrap system /Library/LaunchDaemons/org.hrc.plist
+          ansible.builtin.command: launchctl bootstrap system /Library/LaunchDaemons/io.dimidiumlabs.hrc.plist
           when: _hrc_loaded.rc == 113
           changed_when: true

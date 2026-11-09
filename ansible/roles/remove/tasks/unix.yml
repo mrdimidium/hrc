@@ -18,19 +18,19 @@
   when: _hrc_os == 'darwin'
   block:
     - name: Check whether launch daemon is loaded
-      ansible.builtin.command: launchctl print system/org.hrc
+      ansible.builtin.command: launchctl print system/io.dimidiumlabs.hrc
       register: _hrc_loaded
       changed_when: false
       failed_when: _hrc_loaded.rc not in [0, 113]
       check_mode: false
 
     - name: Unload launch daemon
-      ansible.builtin.command: launchctl bootout system/org.hrc
+      ansible.builtin.command: launchctl bootout system/io.dimidiumlabs.hrc
       when: _hrc_loaded.rc == 0
       changed_when: true
 
     - name: Disable launch daemon
-      ansible.builtin.command: launchctl disable system/org.hrc
+      ansible.builtin.command: launchctl disable system/io.dimidiumlabs.hrc
       when: _hrc_service.stat.exists
       changed_when: true
 

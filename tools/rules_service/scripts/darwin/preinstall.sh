@@ -10,8 +10,16 @@ if [ "$(id -u)" != 0 ]; then
     echo '@NAME@: run this command as root' >&2; exit 1
 fi
 
+# Retire the old label before installing the renamed daemon.
 if launchctl print system/org.@NAME@ >/dev/null 2>&1; then
     launchctl bootout system/org.@NAME@
+fi
+if [ -f /Library/LaunchDaemons/org.@NAME@.plist ]; then
+    launchctl disable system/org.@NAME@
+    rm /Library/LaunchDaemons/org.@NAME@.plist
+fi
+if launchctl print system/io.dimidiumlabs.@NAME@ >/dev/null 2>&1; then
+    launchctl bootout system/io.dimidiumlabs.@NAME@
 fi
 
 # Allocate unused local system IDs; never renumber existing accounts.

@@ -60,7 +60,7 @@ def _service_files_impl(ctx):
     prefix = ctx.attr.prefix.rstrip("/")
     binary = prefix + "/bin/" + executable
     outputs = {}
-    for kind, filename in [("systemd", name + ".systemd"), ("openrc", name + ".alpine"), ("launchd", "org." + name + ".plist"), ("winsw", name + ".winsw.xml")]:
+    for kind, filename in [("systemd", name + ".systemd"), ("openrc", name + ".alpine"), ("launchd", "io.dimidiumlabs." + name + ".plist"), ("winsw", name + ".winsw.xml")]:
         macos = kind == "launchd"
         config = (prefix + "/etc/" if macos else "/etc/") + name + "/" + name + ".json"
 
@@ -96,7 +96,7 @@ def _service_files_impl(ctx):
             substitutions = {
                 "@ARGUMENTS@": "\n".join(["    <string>" + _xml(arg) + "</string>" for arg in [binary] + args]),
                 "@GROUP@": _xml(group),
-                "@LABEL@": _xml("org." + name),
+                "@LABEL@": _xml("io.dimidiumlabs." + name),
                 "@LOG@": _xml(log),
                 "@STATE@": _xml(state),
                 "@USER@": _xml(user),

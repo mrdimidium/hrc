@@ -9,9 +9,9 @@ if [ "$(id -u)" != 0 ]; then
     echo '@NAME@: run this command as root' >&2; exit 1
 fi
 
-if launchctl print system/org.@NAME@ >/dev/null 2>&1; then
-    launchctl bootout system/org.@NAME@
+if launchctl print system/io.dimidiumlabs.@NAME@ >/dev/null 2>&1; then
+    launchctl bootout system/io.dimidiumlabs.@NAME@
 fi
-launchctl disable system/org.@NAME@
+launchctl disable system/io.dimidiumlabs.@NAME@
 
 # Accounts, config, secrets, workspaces and logs are retained.

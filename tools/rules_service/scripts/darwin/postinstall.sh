@@ -15,5 +15,5 @@ if [ -f @SHELL_CONFIG@ ]; then
 fi
 
 # Do not enable or start jobs before providers and secrets are configured.
-plist=/Library/LaunchDaemons/org.@NAME@.plist
+plist=/Library/LaunchDaemons/io.dimidiumlabs.@NAME@.plist
 if [ -f "$plist" ]; then plutil -lint -s "$plist"; fi

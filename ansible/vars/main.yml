@@ -20,7 +20,7 @@ _hrc_paths:
     logs: /Library/Logs/hrc
     bin: /usr/local/bin
     runtime: /usr/local/lib/hrc
-    service: /Library/LaunchDaemons/org.hrc.plist
+    service: /Library/LaunchDaemons/io.dimidiumlabs.hrc.plist
 
   windows:
     config: C:\ProgramData\hrc

@@ -18,7 +18,7 @@
   when: _hrc_os == 'linux' and ansible_facts.service_mgr == 'openrc'
 
 - name: Restart hrc launch daemon
-  ansible.builtin.command: launchctl kickstart -k system/org.hrc
+  ansible.builtin.command: launchctl kickstart -k system/io.dimidiumlabs.hrc
   register: _hrc_restart
   changed_when: _hrc_restart.rc == 0
   failed_when: _hrc_restart.rc not in [0, 113]

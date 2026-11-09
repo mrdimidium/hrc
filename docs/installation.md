@@ -292,8 +292,8 @@ sudo install -m 0755 -o root -g wheel hrc hrc-worker /usr/local/bin/
 sudo cp -R runner/. /usr/local/lib/hrc/
 sudo chown -R root:wheel /usr/local/lib/hrc
 sudo chmod -R u=rwX,go=rX /usr/local/lib/hrc
-sudo install -m 0644 -o root -g wheel services/org.hrc.plist /Library/LaunchDaemons/org.hrc.plist
-sudo plutil -lint /Library/LaunchDaemons/org.hrc.plist
+sudo install -m 0644 -o root -g wheel services/io.dimidiumlabs.hrc.plist /Library/LaunchDaemons/io.dimidiumlabs.hrc.plist
+sudo plutil -lint /Library/LaunchDaemons/io.dimidiumlabs.hrc.plist
 ```
 
 **Windows (PowerShell as Administrator)**
@@ -376,7 +376,7 @@ Repeat the file and launchd definition commands from
 [installation](#installation-1), then start:
 
 ```sh
-sudo launchctl bootstrap system /Library/LaunchDaemons/org.hrc.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/io.dimidiumlabs.hrc.plist
 ```
 
 **Windows (PowerShell as Administrator)**
@@ -403,8 +403,8 @@ Configuration, secrets, accounts and build data can be retained.
   unit, run `sudo systemctl daemon-reload`.
 - **OpenRC:** `sudo rc-service hrc stop` and `sudo rc-update del hrc default`
   (and remove it from any other runlevels).
-- **launchd:** `sudo launchctl bootout system/org.hrc` (omit if already
-  unloaded) and `sudo launchctl disable system/org.hrc`.
+- **launchd:** `sudo launchctl bootout system/io.dimidiumlabs.hrc` (omit if already
+  unloaded) and `sudo launchctl disable system/io.dimidiumlabs.hrc`.
 - **Windows (PowerShell as Administrator):**
   `& "$env:ProgramFiles\hrc\hrc-service.exe" stopwait` and
   `& "$env:ProgramFiles\hrc\hrc-service.exe" uninstall`.
