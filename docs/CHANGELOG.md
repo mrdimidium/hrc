@@ -6,11 +6,43 @@ Notable changes to hrc, in the format of
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-09
+
 ### Added
 
 - Builtin Ansible collection with install and remove roles for Linux
-  (systemd/OpenRC), macOS and Windows. Release archives include the collection
-  in `SHASUMS256`; binary sources can be mirrored or vendored.
+  (systemd/OpenRC), macOS and Windows. The collection is included in
+  `SHASUMS256`; binary sources can be mirrored or vendored.
+- Release metadata: a plain `VERSION` file in binary archives, a machine-readable
+  `manifest.json` with artifact hashes and sizes, and a detached GPG signature
+  for `SHASUMS256`.
+- Public release mirror at `https://pkg.dimidiumlabs.io/hrc`, with immutable
+  versioned builds and `stable` and `dev` channel manifests. GitHub Releases
+  carry the same artifacts.
+
+### Changed
+
+- Tie each slot's workspace and process group to the same lifetime. With
+  `reuseDirs`, workspaces and build servers survive between jobs, but controller
+  shutdown now terminates remaining slot processes and removes all slot
+  directories, including idle reusable slots. Without `reuseDirs`, both are
+  cleaned up after each runner.
+- Replace bundled `control` and `control.ps1` scripts with explicit installation,
+  upgrade and removal instructions in `docs/installation.md`, or the Ansible
+  roles. Existing installations must use the new procedure for upgrades.
+- Move documentation and the changelog to `docs/`.
+- Change the Go module path from `gilti.dev/hrc` to `dimidiumlabs.io/hrc` and move
+  implementation packages from `pkg/` to `internal/`; they are no longer
+  available for external import.
+- Use Bazel directly for builds, formatting, linting and license checks, without
+  mise or the Aspect CLI. Workspace stamping no longer requires system Python.
+- Update Go to 1.27.3, `actions/scaleset` to 0.5.0 and other build and runtime
+  dependencies. Automate dependency and lock-file updates with Renovate.
+
+### Fixed
+
+- Use the correct macOS launchd service ID, `io.dimidiumlabs.hrc`.
+- Stabilize Windows process startup and cleanup tests.
 
 ## [0.3.0] - 2026-10-28
 
@@ -78,7 +110,8 @@ Builds for `amd64` and `arm64` on Linux, macOS and Windows, bundling GitHub
 Actions runner 2.338.0, with checksums in `SHASUMS256.txt` and build provenance
 attestations.
 
-[Unreleased]: https://github.com/mrdimidium/hrc/compare/release-0.3.0...HEAD
+[Unreleased]: https://github.com/mrdimidium/hrc/compare/release-0.4.0...HEAD
+[0.4.0]: https://github.com/mrdimidium/hrc/compare/release-0.3.0...release-0.4.0
 [0.3.0]: https://github.com/mrdimidium/hrc/compare/release-0.2.0...release-0.3.0
 [0.2.0]: https://github.com/mrdimidium/hrc/compare/release-0.1.1...release-0.2.0
 [0.1.1]: https://github.com/mrdimidium/hrc/compare/release-0.1.0...release-0.1.1
