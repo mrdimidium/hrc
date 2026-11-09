@@ -19,8 +19,8 @@ working directory with `curl` and `jq` installed to download and install the
 collection from the latest release:
 
 ```sh
-version=$(curl -fsL https://github.com/mrdimidium/hrc/releases/latest/download/manifest.json | jq -er '.version')
-release="https://github.com/mrdimidium/hrc/releases/download/release-$version"
+version=$(curl -fsL https://pkg.dimidiumlabs.io/hrc/channels/stable.json | jq -er '.version')
+release="https://pkg.dimidiumlabs.io/hrc/builds/$version"
 archive="ansible-collection-$version.tar.gz"
 
 curl -fLO "$release/$archive" -O "$release/SHASUMS256"
@@ -199,8 +199,8 @@ Requires `curl` and `jq`.
 case $(uname -s) in Darwin) os=darwin ;; Linux) os=linux ;; MINGW*|MSYS*) os=windows ;; esac
 case ${PROCESSOR_ARCHITEW6432:-${PROCESSOR_ARCHITECTURE:-$(uname -m)}} in x86_64|AMD64) arch=amd64 ;; arm64|aarch64|ARM64) arch=arm64 ;; esac
 
-version=$(curl -fsL https://github.com/mrdimidium/hrc/releases/latest/download/manifest.json | jq -er '.version')
-release="https://github.com/mrdimidium/hrc/releases/download/release-$version"
+version=$(curl -fsL https://pkg.dimidiumlabs.io/hrc/channels/stable.json | jq -er '.version')
+release="https://pkg.dimidiumlabs.io/hrc/builds/$version"
 archive="hrc-$arch-$os-$version.tar.gz"
 curl -fLO "$release/$archive" -O "$release/SHASUMS256"
 case $os in darwin) shasum -a 256 -c --ignore-missing SHASUMS256 ;; *) sha256sum -c --ignore-missing SHASUMS256 ;; esac
@@ -214,8 +214,8 @@ Stop if checksum verification fails.
 $machine = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 $arch = switch ($machine) { AMD64 { 'amd64' } ARM64 { 'arm64' } }
 
-$version = (Invoke-RestMethod 'https://github.com/mrdimidium/hrc/releases/latest/download/manifest.json').version
-$release = "https://github.com/mrdimidium/hrc/releases/download/release-$version"
+$version = (Invoke-RestMethod 'https://pkg.dimidiumlabs.io/hrc/channels/stable.json').version
+$release = "https://pkg.dimidiumlabs.io/hrc/builds/$version"
 $archive = "hrc-$arch-windows-$version.tar.gz"
 Invoke-WebRequest "$release/SHASUMS256" -OutFile SHASUMS256
 Invoke-WebRequest "$release/$archive" -OutFile $archive
@@ -248,9 +248,16 @@ sizes in bytes and SHA-256 hashes. Filenames are relative to the directory
 containing the manifest, so the same manifest works on either mirror. Binary archives additionally
 identify their OS and architecture. `manifest.json` is covered
 by the signed checksum list; the list and its signature are not included in
-the manifest, avoiding a circular dependency. The current GitHub `dev` download
-URLs are mutable; hashes pin the advertised contents, but old dev assets may
-be removed when the channel is updated.
+the manifest, avoiding a circular dependency.
+
+The public mirror stores every build at
+`https://pkg.dimidiumlabs.io/hrc/builds/{version}/`, using the full version,
+including dev suffixes and build metadata. Files at these URLs are immutable.
+`channels/stable.json` and `channels/dev.json` are mutable copies of the chosen
+build's `manifest.json`, updated only after publication to S3 and GitHub
+completes. GitHub Releases contain the same files, but the GitHub `dev` release
+retains only the current build. The Ansible collection uses the immutable
+mirror URLs by default.
 
 **Optional: verify build provenance**
 

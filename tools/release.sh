@@ -7,11 +7,19 @@ set -euo pipefail
 signing_private_key=${GPG_PRIVATE_KEY:-}
 signing_passphrase=${GPG_PASSPHRASE:-}
 unset GPG_PRIVATE_KEY GPG_PASSPHRASE
+storage_access_key=${S3_ACCESS_KEY_ID:-}
+storage_secret_key=${S3_SECRET_ACCESS_KEY:-}
+unset S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 fail() {
     printf '%s\n' "$*" >&2
     exit 1
+}
+
+publish() {
+    S3_ACCESS_KEY_ID=$storage_access_key S3_SECRET_ACCESS_KEY=$storage_secret_key \
+        bazel run //tools:publish -- --input "$PWD/$directory" --channel "$channel" "$@"
 }
 
 notes() {
@@ -78,7 +86,9 @@ for target in amd64-linux arm64-linux amd64-darwin arm64-darwin amd64-windows ar
     names+=("$archive")
 done
 
-: "${HRC_ARTIFACT_SOURCE:?HRC_ARTIFACT_SOURCE is required as the default collection source}"
+: "${S3_PUBLIC_URL:?S3_PUBLIC_URL is required as the public mirror base URL}"
+mirror="${S3_PUBLIC_URL%/}/hrc/builds/$version"
+HRC_ARTIFACT_SOURCE=$mirror
 bazel build //ansible:collection "--//ansible:artifact_source=$HRC_ARTIFACT_SOURCE"
 collection="ansible-collection-$version.tar.gz"
 cp bazel-bin/ansible/collection.tar.gz "$directory/$collection"
@@ -123,6 +133,15 @@ fi
 : "${GPG_KEY_ID:?GPG_KEY_ID is required for signing}"
 : "${signing_private_key:?GPG_PRIVATE_KEY is required for signing}"
 : "${signing_passphrase:?GPG_PASSPHRASE is required for signing}"
+: "${S3_BUCKET:?S3_BUCKET is required for publishing}"
+: "${S3_ENDPOINT:?S3_ENDPOINT is required for publishing}"
+: "${storage_access_key:?S3_ACCESS_KEY_ID is required for publishing}"
+: "${storage_secret_key:?S3_SECRET_ACCESS_KEY is required for publishing}"
+case ${GITHUB_REF:-} in
+    refs/heads/main) channel=dev ;;
+    "refs/tags/release-$version") channel=stable ;;
+    *) fail 'Ref is not publishable' ;;
+esac
 
 # Keep signing isolated from the user's keyring and never put secrets in argv.
 (
@@ -146,6 +165,9 @@ fi
     gpg --homedir "$signing_home" --batch --verify \
         "$signing_home/SHASUMS256.asc" "$directory/SHASUMS256"
     mv "$signing_home/SHASUMS256.asc" "$directory/SHASUMS256.asc"
+    # Upload before changing GitHub. The publisher retains an existing valid
+    # signature on retries, so both mirrors expose exactly the same files.
+    publish --keyring "$signing_home"
 )
 unset signing_private_key signing_passphrase
 
@@ -162,6 +184,7 @@ if [[ "$ref" == refs/heads/main ]]; then
     if [[ -n "$changes" ]]; then
         body+=$'\n\n'"$changes"
     fi
+    body+=$'\n\n'"**Public mirror:** [Build manifest]($mirror/manifest.json)"
     if gh release view "$tag" --json isDraft,assets > /dev/null 2>&1; then
         gh release edit "$tag" --title "$tag" --notes "$body" --prerelease --latest=false
     else
@@ -171,8 +194,23 @@ else
     [[ "$ref" == "refs/tags/release-$version" ]] || fail "Release ref does not match version: $ref"
     tag=${ref#refs/tags/}
     body=$(notes "$version" true)
+    body+=$'\n\n'"**Public mirror:** [Build manifest]($mirror/manifest.json)"
     if existing=$(gh release view "$tag" --json isDraft 2>/dev/null); then
-        jq -e '.isDraft == true' <<< "$existing" > /dev/null || fail "Release $tag is already published; refusing to overwrite it."
+        if ! jq -e '.isDraft == true' <<< "$existing" > /dev/null; then
+            # Recover if GitHub publication succeeded but channel promotion failed.
+            # Never overwrite an already published stable release.
+            (
+                verification=$(mktemp -d)
+                trap 'rm -rf -- "$verification"' EXIT
+                gh release download "$tag" --dir "$verification" \
+                    --pattern SHASUMS256 --pattern SHASUMS256.asc --pattern manifest.json
+                for name in SHASUMS256 SHASUMS256.asc manifest.json; do
+                    cmp "$directory/$name" "$verification/$name" || fail "Published release $tag differs: $name"
+                done
+            )
+            publish --promote
+            exit 0
+        fi
     else
         gh release create "$tag" --verify-tag --draft --title "$version" --notes "$body"
     fi
@@ -202,3 +240,7 @@ if [[ "$tag" == dev ]]; then
 else
     gh release edit "$tag" --draft=false --notes "$body"
 fi
+
+# Only completed publications become the current channel build.
+publish --promote
+unset storage_access_key storage_secret_key
