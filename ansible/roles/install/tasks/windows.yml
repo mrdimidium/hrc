@@ -1,0 +1,210 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+- name: Read installed version
+  ansible.windows.win_command: '"C:\Program Files\hrc\hrc.exe" -version'
+  register: _hrc_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check registered service
+  ansible.windows.win_service_info:
+    name: hrc
+  register: _hrc_service
+
+- name: Check completed runtime installation
+  ansible.windows.win_stat:
+    path: '{{ _hrc_path.runtime }}\.hrc-release'
+  register: _hrc_runtime
+
+- name: Decide whether installation is required
+  ansible.builtin.set_fact:
+    _hrc_install_needed: "{{ _hrc_installed.rc | default(1) != 0 or _hrc_installed.stdout | default('') | trim != _hrc_release_version or not _hrc_service.exists or not _hrc_runtime.stat.exists }}"
+
+- name: Report installation in check mode
+  ansible.builtin.debug:
+    msg: "Would install hrc {{ _hrc_release_version }}"
+  changed_when: true
+  when: ansible_check_mode and _hrc_install_needed
+
+- name: Install pinned release
+  when: _hrc_install_needed and not ansible_check_mode
+  block:
+    - name: Create temporary directory
+      ansible.windows.win_tempfile:
+        state: directory
+        suffix: -hrc
+      register: _hrc_download
+
+    - name: Download release archive
+      ansible.windows.win_get_url:
+        url: "{{ _hrc_source }}/{{ _hrc_artifact.filename }}"
+        dest: '{{ _hrc_download.path }}\hrc.tar.gz'
+        checksum: "{{ _hrc_artifact.sha256 }}"
+        checksum_algorithm: sha256
+      when: hrc_artifact_source is match('^https?://')
+
+    - name: Copy vendored release archive from controller
+      ansible.windows.win_copy:
+        src: "{{ _hrc_source }}/{{ _hrc_artifact.filename }}"
+        dest: '{{ _hrc_download.path }}\hrc.tar.gz'
+      when: hrc_artifact_source is not match('^https?://')
+
+    - name: Hash release archive
+      ansible.windows.win_stat:
+        path: '{{ _hrc_download.path }}\hrc.tar.gz'
+        checksum_algorithm: sha256
+      register: _hrc_archive
+
+    - name: Verify release archive
+      ansible.builtin.assert:
+        that: _hrc_archive.stat.checksum == _hrc_artifact.sha256
+        fail_msg: hrc archive SHA-256 mismatch.
+
+    - name: Extract release archive
+      ansible.windows.win_command: tar.exe -xzf hrc.tar.gz
+      args:
+        chdir: "{{ _hrc_download.path }}"
+      changed_when: true
+
+    - name: Stop existing service before replacing files
+      ansible.windows.win_service:
+        name: hrc
+        state: stopped
+      when: _hrc_service.exists
+
+    - name: Create installation and data directories
+      ansible.windows.win_file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - "{{ _hrc_path.bin }}"
+        - '{{ _hrc_path.bin }}\lib'
+        - "{{ _hrc_path.config }}"
+        - '{{ _hrc_path.config }}\secrets'
+        - "{{ _hrc_path.state }}"
+        - "{{ _hrc_path.logs }}"
+
+    # Grant administrative access before removing inherited permissions.
+    - name: Set installation and data directory permissions
+      ansible.windows.win_acl:
+        path: "{{ item.0 }}"
+        user: "{{ item.1.user }}"
+        rights: "{{ item.1.rights }}"
+        type: allow
+        state: present
+        inherit: ContainerInherit, ObjectInherit
+      loop: "{{ [_hrc_path.bin, _hrc_path.config] | product(_hrc_windows_acl) | list }}"
+      vars:
+        _hrc_windows_acl:
+          - {user: S-1-5-18, rights: FullControl}
+          - {user: S-1-5-32-544, rights: FullControl}
+          - {user: S-1-5-19, rights: ReadAndExecute}
+
+    - name: Remove inherited installation and data permissions
+      ansible.windows.win_acl_inheritance:
+        path: "{{ item }}"
+        state: absent
+        reorganize: false
+      loop:
+        - "{{ _hrc_path.bin }}"
+        - "{{ _hrc_path.config }}"
+
+    - name: Allow LocalService to write state and logs
+      ansible.windows.win_acl:
+        path: "{{ item }}"
+        user: S-1-5-19
+        rights: Modify
+        type: allow
+        state: present
+        inherit: ContainerInherit, ObjectInherit
+      loop:
+        - "{{ _hrc_path.state }}"
+        - "{{ _hrc_path.logs }}"
+
+    - name: Remove previous runtime
+      ansible.windows.win_file:
+        path: "{{ _hrc_path.runtime }}"
+        state: absent
+
+    - name: Create runtime directory
+      ansible.windows.win_file:
+        path: "{{ _hrc_path.runtime }}"
+        state: directory
+
+    - name: Install binaries
+      ansible.windows.win_copy:
+        src: '{{ _hrc_download.path }}\{{ item }}'
+        dest: '{{ _hrc_path.bin }}\{{ item }}'
+        remote_src: true
+      loop: [hrc.exe, hrc-worker.exe]
+      notify: hrc install restart
+
+    - name: Install runtime
+      ansible.windows.win_copy:
+        src: '{{ _hrc_download.path }}\runner\'
+        dest: '{{ _hrc_path.runtime }}\'
+        remote_src: true
+      notify: hrc install restart
+
+    - name: Install private service wrapper
+      ansible.windows.win_copy:
+        src: winsw.exe
+        dest: '{{ _hrc_path.bin }}\hrc-service.exe'
+      notify: hrc install restart
+
+    - name: Write service definition
+      ansible.windows.win_template:
+        src: hrc-service.xml.j2
+        dest: "{{ _hrc_path.service }}"
+      notify: hrc install restart
+
+    - name: Register service on first installation
+      ansible.windows.win_command:
+        argv:
+          - '{{ _hrc_path.bin }}\hrc-service.exe'
+          - install
+      when: not _hrc_service.exists
+      notify: hrc install restart
+
+    - name: Mark completed runtime installation
+      ansible.windows.win_copy:
+        content: "{{ _hrc_release_version }}\n"
+        dest: '{{ _hrc_path.runtime }}\.hrc-release'
+  always:
+    - name: Remove temporary directory
+      ansible.windows.win_file:
+        path: "{{ _hrc_download.path }}"
+        state: absent
+      when: _hrc_download.path is defined
+      diff: false
+
+- name: Configure and start hrc
+  when: not (ansible_check_mode and _hrc_install_needed)
+  block:
+    - name: Install secret files
+      ansible.windows.win_copy:
+        content: "{{ item.value }}"
+        dest: '{{ _hrc_path.config }}\secrets\{{ item.key }}'
+      loop: "{{ hrc_secrets | dict2items }}"
+      no_log: true
+      diff: false
+      notify: hrc install restart
+
+    - name: Write configuration
+      ansible.windows.win_copy:
+        content: "{{ _hrc_config_defaults | combine(hrc_config) | to_nice_json }}\n"
+        dest: '{{ _hrc_path.config }}\hrc.json'
+      no_log: true
+      diff: false
+      notify: hrc install restart
+
+    - name: Apply configuration before accepting jobs
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable and start service
+      ansible.windows.win_service:
+        name: hrc
+        start_mode: auto
+        state: started

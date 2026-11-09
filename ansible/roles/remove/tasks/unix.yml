@@ -1,0 +1,67 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+- name: Check installed service definition
+  ansible.builtin.stat:
+    path: "{{ _hrc_path.service }}"
+  register: _hrc_service
+
+- name: Stop and disable Linux service
+  when: _hrc_os == 'linux' and _hrc_service.stat.exists
+  ansible.builtin.service:
+    name: hrc
+    state: stopped
+    enabled: false
+    use: "{{ ansible_facts.service_mgr }}"
+
+- name: Stop and disable launch daemon
+  when: _hrc_os == 'darwin'
+  block:
+    - name: Check whether launch daemon is loaded
+      ansible.builtin.command: launchctl print system/org.hrc
+      register: _hrc_loaded
+      changed_when: false
+      failed_when: _hrc_loaded.rc not in [0, 113]
+      check_mode: false
+
+    - name: Unload launch daemon
+      ansible.builtin.command: launchctl bootout system/org.hrc
+      when: _hrc_loaded.rc == 0
+      changed_when: true
+
+    - name: Disable launch daemon
+      ansible.builtin.command: launchctl disable system/org.hrc
+      when: _hrc_service.stat.exists
+      changed_when: true
+
+- name: Remove service definition
+  ansible.builtin.file:
+    path: "{{ _hrc_path.service }}"
+    state: absent
+  register: _hrc_removed_service
+
+- name: Reload systemd after removal
+  when: _hrc_os == 'linux' and ansible_facts.service_mgr == 'systemd' and _hrc_removed_service.changed
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Remove binaries and runtime
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/local/bin/hrc
+    - /usr/local/bin/hrc-worker
+    - "{{ _hrc_path.runtime }}"
+  diff: false
+
+- name: Remove configuration, secrets and data only when requested
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ _hrc_path.config }}"
+    - "{{ _hrc_path.state }}"
+    - "{{ _hrc_path.logs }}"
+  when: hrc_remove_data
+  diff: false

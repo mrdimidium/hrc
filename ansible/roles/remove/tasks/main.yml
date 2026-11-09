@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+- name: Load installation paths
+  ansible.builtin.include_vars: "{{ role_path }}/../../vars/main.yml"
+
+- name: Validate removal settings
+  ansible.builtin.assert:
+    that:
+      - _hrc_os in ['linux', 'darwin', 'windows']
+      - hrc_remove_data is boolean
+      - _hrc_os != 'linux' or ansible_facts.service_mgr in ['systemd', 'openrc']
+
+- name: Remove hrc from this OS
+  ansible.builtin.include_tasks:
+    file: "{{ 'windows' if _hrc_os == 'windows' else 'unix' }}.yml"

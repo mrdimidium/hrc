@@ -1,0 +1,95 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_test.bzl", "py_test")
+load("//tools/rules_ansible:collection.bzl", "collection")
+
+py_binary(
+    name = "release_manifest",
+    srcs = ["release_manifest.py"],
+    main = "release_manifest.py",
+    legacy_create_init = False,
+)
+
+py_test(
+    name = "collection_test",
+    srcs = [
+        "collection_test.py",
+        "release_manifest.py",
+    ],
+    main = "collection_test.py",
+    imports = ["."],
+    legacy_create_init = False,
+    args = [
+        "$(rootpath :galaxy.yml.tpl)",
+        "$(rootpath @ansible_windows_test//file)",
+    ],
+    data = [
+        ":galaxy.yml.tpl",
+        ":sources",
+        "@ansible_windows_test//file",
+    ],
+    deps = [
+        "//tools/rules_ansible:builder",
+        "@ansible_deps//pyyaml",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+string_flag(
+    name = "artifact_source",
+    build_setting_default = "",
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "README.md",
+        "galaxy.yml.tpl",
+    ] + glob([
+        "meta/*.yml",
+        "roles/**/*.yml",
+        "roles/**/*.j2",
+        "vars/*.yml",
+    ]),
+)
+
+genrule(
+    name = "release_vars",
+    srcs = ["//:ansible_release_artifacts"],
+    outs = ["release.yml"],
+    cmd = "$(execpath :release_manifest) --artifacts $(execpaths //:ansible_release_artifacts) --output $@",
+    tools = [":release_manifest"],
+    tags = ["manual"],
+)
+
+collection(
+    name = "collection",
+    srcs = [":sources"],
+    files = {
+        "//:LICENSE": "LICENSE",
+        "@ansible_winsw//file": "roles/install/files/winsw.exe",
+        "@ansible_winsw_license//file": "roles/install/files/WinSW-LICENSE.txt",
+    },
+    templates = {
+        ":release_vars": "roles/install/vars/release.yml",
+        "README.md": "README.md",
+        "galaxy.yml.tpl": "galaxy.yml",
+    },
+    settings = {":artifact_source": "@ARTIFACT_SOURCE@"},
+    substitution_files = {"//:dist/release/VERSION": "@VERSION@"},
+    stamp_substitutions = {"@COMMIT@": "STABLE_HRC_COMMIT"},
+    validation = {"@COMMIT@": "[0-9a-f]{40}"},
+    tags = ["manual"],
+)
+
+filegroup(
+    name = "starlark_sources",
+    srcs = ["BUILD.bazel"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+- name: Check registered service
+  ansible.windows.win_service_info:
+    name: hrc
+  register: _hrc_service
+
+- name: Stop service
+  ansible.windows.win_service:
+    name: hrc
+    state: stopped
+  when: _hrc_service.exists
+
+- name: Unregister service
+  ansible.windows.win_service:
+    name: hrc
+    state: absent
+  when: _hrc_service.exists
+
+- name: Remove installation and private service wrapper
+  ansible.windows.win_file:
+    path: "{{ _hrc_path.bin }}"
+    state: absent
+  diff: false
+
+- name: Remove configuration, secrets and data only when requested
+  ansible.windows.win_file:
+    path: "{{ _hrc_path.config }}"
+    state: absent
+  when: hrc_remove_data
+  diff: false

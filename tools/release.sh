@@ -74,6 +74,13 @@ for target in amd64-linux arm64-linux amd64-darwin arm64-darwin amd64-windows ar
     names+=("$archive")
 done
 
+: "${HRC_ARTIFACT_SOURCE:?HRC_ARTIFACT_SOURCE is required as the default collection source}"
+bazel build //ansible:collection "--//ansible:artifact_source=$HRC_ARTIFACT_SOURCE"
+collection="ansible-collection-$version.tar.gz"
+cp bazel-bin/ansible/collection.tar.gz "$directory/$collection"
+(cd "$directory" && sha256sum "$collection") >> "$directory/SHASUMS256.txt"
+names+=("$collection")
+
 LC_ALL=C sort -k 2 -o "$directory/SHASUMS256.txt" "$directory/SHASUMS256.txt"
 if [[ "$dry_run" == true ]]; then
     printf 'Validated release %s: %s\n' "$version" "${names[*]}"

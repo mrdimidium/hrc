@@ -52,6 +52,7 @@ jobs:
       - name: Check licenses and lint
         if: matrix.os != 'windows'
         run: |
+          bash -n tools/release.sh
           bazel run //tools:reuse -- --root "$GITHUB_WORKSPACE" lint
           bazel build --config=lint --@aspect_rules_lint//lint:fail_on_violation=true --output_groups=rules_lint_human //:starlark_sources
 
@@ -113,9 +114,13 @@ jobs:
           pattern: build-*
           merge-multiple: true
           path: dist/release
+      - uses: bazel-contrib/setup-bazel@104e3eea9447cdaa4b00d0fb46191a3985d26ab3 # 0.19.1
+        with:
+          bazelisk-version: '1.x'
       - name: Verify and publish release
         run: bash tools/release.sh
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           HRC_VERSION: ${{ needs.build.outputs.version }}
+          HRC_ARTIFACT_SOURCE: https://github.com/${{ github.repository }}/releases/download/${{ github.ref == 'refs/heads/main' && 'dev' || github.ref_name }}

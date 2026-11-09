@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+- name: Restart hrc systemd service
+  ansible.builtin.systemd_service:
+    name: hrc
+    state: restarted
+    daemon_reload: true
+  listen: hrc install restart
+  when: _hrc_os == 'linux' and ansible_facts.service_mgr == 'systemd'
+
+- name: Restart hrc OpenRC service
+  ansible.builtin.service:
+    name: hrc
+    state: restarted
+    use: openrc
+  listen: hrc install restart
+  when: _hrc_os == 'linux' and ansible_facts.service_mgr == 'openrc'
+
+- name: Restart hrc launch daemon
+  ansible.builtin.command: launchctl kickstart -k system/org.hrc
+  register: _hrc_restart
+  changed_when: _hrc_restart.rc == 0
+  failed_when: _hrc_restart.rc not in [0, 113]
+  listen: hrc install restart
+  when: _hrc_os == 'darwin'
+
+- name: Restart hrc Windows service
+  ansible.windows.win_service:
+    name: hrc
+    start_mode: auto
+    state: restarted
+  listen: hrc install restart
+  when: _hrc_os == 'windows'

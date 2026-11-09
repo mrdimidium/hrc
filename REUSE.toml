@@ -5,23 +5,29 @@ version = 1
 
 [[annotations]]
 path = [
+  # tools configs
   ".bazelversion",
   ".gitattributes",
   ".gitignore",
   ".gitmodules",
   ".mailmap",
-  "MODULE.bazel.lock",
+
+  # hrc configs
   "VERSION",
   "cmd/pkg/hrc.json",
+
+  # any lock files
   "go.mod",
   "go.sum",
+  "MODULE.bazel.lock",
   "tools/requirements.txt",
+  "tools/rules_ansible/requirements.txt",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Nikolay Govorov"
 SPDX-License-Identifier = "BSD-3-Clause"
 
 [[annotations]]
-path = ["AGENTS.md", "docs/*"]
+path = ["AGENTS.md", "ansible/README.md", "docs/*"]
 SPDX-FileCopyrightText = "2026 Nikolay Govorov"
 SPDX-License-Identifier = "CC-BY-4.0"

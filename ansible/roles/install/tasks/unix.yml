@@ -1,0 +1,175 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+- name: Read installed version
+  ansible.builtin.command: /usr/local/bin/hrc -version
+  register: _hrc_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check service definition
+  ansible.builtin.stat:
+    path: "{{ _hrc_path.service }}"
+  register: _hrc_service
+
+- name: Check completed runtime installation
+  ansible.builtin.stat:
+    path: "{{ _hrc_path.runtime }}/.hrc-release"
+  register: _hrc_runtime
+
+- name: Decide whether installation is required
+  ansible.builtin.set_fact:
+    _hrc_install_needed: "{{ _hrc_installed.rc != 0 or _hrc_installed.stdout | trim != _hrc_release_version or not _hrc_service.stat.exists or not _hrc_runtime.stat.exists }}"
+
+- name: Report installation in check mode
+  ansible.builtin.debug:
+    msg: "Would install hrc {{ _hrc_release_version }}"
+  changed_when: true
+  when: ansible_check_mode and _hrc_install_needed
+
+- name: Install pinned release
+  when: _hrc_install_needed and not ansible_check_mode
+  block:
+    - name: Create temporary directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: -hrc
+      register: _hrc_download
+
+    - name: Download release archive
+      ansible.builtin.get_url:
+        url: "{{ _hrc_source }}/{{ _hrc_artifact.filename }}"
+        dest: "{{ _hrc_download.path }}/hrc.tar.gz"
+        checksum: "sha256:{{ _hrc_artifact.sha256 }}"
+        mode: '0600'
+      when: hrc_artifact_source is match('^https?://')
+
+    - name: Copy vendored release archive from controller
+      ansible.builtin.copy:
+        src: "{{ _hrc_source }}/{{ _hrc_artifact.filename }}"
+        dest: "{{ _hrc_download.path }}/hrc.tar.gz"
+        mode: '0600'
+      when: hrc_artifact_source is not match('^https?://')
+
+    - name: Hash release archive
+      ansible.builtin.stat:
+        path: "{{ _hrc_download.path }}/hrc.tar.gz"
+        checksum_algorithm: sha256
+      register: _hrc_archive
+
+    - name: Verify release archive
+      ansible.builtin.assert:
+        that: _hrc_archive.stat.checksum == _hrc_artifact.sha256
+        fail_msg: hrc archive SHA-256 mismatch.
+
+    - name: Extract release archive
+      ansible.builtin.command:
+        argv: [tar, -xzf, hrc.tar.gz]
+        chdir: "{{ _hrc_download.path }}"
+      changed_when: true
+
+    - name: Stop service and prepare account and directories
+      ansible.builtin.command:
+        argv: [sh, scripts/preinstall.sh]
+        chdir: "{{ _hrc_download.path }}"
+      changed_when: true
+
+    - name: Replace binaries and runtime
+      ansible.builtin.shell: |
+        set -eu
+        install -d -m 0755 /usr/local/bin /usr/local/lib
+        rm -rf /usr/local/lib/hrc
+        install -m 0755 hrc hrc-worker /usr/local/bin/
+        cp -R runner /usr/local/lib/hrc
+        chown -R root:{{ 'wheel' if _hrc_os == 'darwin' else 'root' }} /usr/local/lib/hrc
+        chmod -R u=rwX,go=rX /usr/local/lib/hrc
+        install -m {{ '0755' if _hrc_os == 'linux' and ansible_facts.service_mgr == 'openrc' else '0644' }} services/{{ 'org.hrc.plist' if _hrc_os == 'darwin' else ('hrc.alpine' if ansible_facts.service_mgr == 'openrc' else 'hrc.systemd') }} {{ _hrc_path.service }}
+      args:
+        chdir: "{{ _hrc_download.path }}"
+      changed_when: true
+      notify: hrc install restart
+
+    - name: Mark completed runtime installation
+      ansible.builtin.copy:
+        content: "{{ _hrc_release_version }}\n"
+        dest: "{{ _hrc_path.runtime }}/.hrc-release"
+        mode: '0644'
+  always:
+    - name: Remove temporary directory
+      ansible.builtin.file:
+        path: "{{ _hrc_download.path }}"
+        state: absent
+      when: _hrc_download.path is defined
+      diff: false
+
+- name: Configure and start hrc
+  when: not (ansible_check_mode and _hrc_install_needed)
+  block:
+    - name: Install secret files
+      ansible.builtin.copy:
+        content: "{{ item.value }}"
+        dest: "{{ _hrc_path.config }}/secrets/{{ item.key }}"
+        owner: root
+        group: hrc
+        mode: '0640'
+      loop: "{{ hrc_secrets | dict2items }}"
+      no_log: true
+      diff: false
+      notify: hrc install restart
+
+    - name: Write configuration
+      ansible.builtin.copy:
+        content: "{{ _hrc_config_defaults | combine(hrc_config) | to_nice_json }}\n"
+        dest: "{{ _hrc_path.config }}/hrc.json"
+        owner: root
+        group: hrc
+        mode: '0640'
+      no_log: true
+      diff: false
+      notify: hrc install restart
+
+    - name: Apply configuration before accepting jobs
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable and start systemd service
+      ansible.builtin.systemd_service:
+        name: hrc
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: _hrc_os == 'linux' and ansible_facts.service_mgr == 'systemd'
+
+    - name: Enable and start OpenRC service
+      ansible.builtin.service:
+        name: hrc
+        enabled: true
+        state: started
+        use: openrc
+      when: _hrc_os == 'linux' and ansible_facts.service_mgr == 'openrc'
+
+    - name: Enable and start launch daemon
+      when: _hrc_os == 'darwin'
+      block:
+        - name: Read launch daemon enablement
+          ansible.builtin.command: launchctl print-disabled system
+          register: _hrc_disabled
+          changed_when: false
+          check_mode: false
+
+        - name: Enable launch daemon
+          ansible.builtin.command: launchctl enable system/org.hrc
+          when: _hrc_disabled.stdout is not search('"org\.hrc" => (enabled|false)')
+          changed_when: true
+
+        - name: Check whether launch daemon is loaded
+          ansible.builtin.command: launchctl print system/org.hrc
+          register: _hrc_loaded
+          changed_when: false
+          failed_when: _hrc_loaded.rc not in [0, 113]
+          check_mode: false
+
+        - name: Load launch daemon
+          ansible.builtin.command: launchctl bootstrap system /Library/LaunchDaemons/org.hrc.plist
+          when: _hrc_loaded.rc == 113
+          changed_when: true

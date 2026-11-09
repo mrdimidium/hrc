@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+- name: Load installation paths
+  ansible.builtin.include_vars: "{{ role_path }}/../../vars/main.yml"
+
+- name: Load pinned release
+  ansible.builtin.include_vars: "{{ role_path }}/vars/release.yml"
+
+- name: Validate installation settings
+  ansible.builtin.assert:
+    that:
+      - _hrc_os in ['linux', 'darwin', 'windows']
+      - _hrc_arch in ['amd64', 'arm64']
+      - _hrc_os != 'linux' or ansible_facts.service_mgr in ['systemd', 'openrc']
+      - hrc_config is mapping
+      - hrc_config.id | default('') | length > 0
+      - hrc_config.groups | default([]) | length > 0
+      - hrc_secrets is mapping
+      - hrc_artifact_source is match('^https?://') or hrc_artifact_source is match('^/')
+    fail_msg: Supply hrc_config with id and groups, and an HTTP(S) source or absolute controller directory on a supported host.
+
+- name: Validate secret filenames
+  ansible.builtin.assert:
+    that:
+      - item is match('^[A-Za-z0-9_-][A-Za-z0-9_.-]*$')
+    fail_msg: Secret names must be simple filenames.
+  loop: "{{ hrc_secrets.keys() | list }}"
+
+- name: Select release archive
+  ansible.builtin.set_fact:
+    _hrc_artifact: "{{ _hrc_release_artifacts[_hrc_os ~ '-' ~ _hrc_arch] }}"
+    _hrc_source: "{{ hrc_artifact_source | regex_replace('/+$', '') }}"
+    _hrc_config_defaults:
+      pathWorker: "{{ _hrc_path.bin }}/hrc-worker{{ '.exe' if _hrc_os == 'windows' else '' }}"
+      dirRunner: "{{ _hrc_path.runtime }}"
+      dirBuilds: jobs
+      dirLogs: "{{ _hrc_path.logs }}"
+
+- name: Install on this OS
+  ansible.builtin.include_tasks:
+    file: "{{ 'windows' if _hrc_os == 'windows' else 'unix' }}.yml"

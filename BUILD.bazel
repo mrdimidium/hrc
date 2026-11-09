@@ -4,6 +4,13 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@gazelle//:def.bzl", "gazelle")
 
+exports_files(["LICENSE"])
+
+exports_files(
+    ["dist/release/VERSION"],
+    visibility = ["//ansible:__pkg__"],
+)
+
 bool_flag(
     name = "bundled-dotnet",
     build_setting_default = True,
@@ -26,6 +33,21 @@ filegroup(
     visibility = ["//cmd:__pkg__"],
 )
 
+# Inputs staged by CI's release matrix, not rebuilt across operating systems.
+filegroup(
+    name = "ansible_release_artifacts",
+    # VERSION is optional outside the release job, like the tarballs.
+    # buildifier: disable=constant-glob
+    srcs = glob(
+        [
+            "dist/release/VERSION",
+            "dist/release/hrc-*.tar.gz",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//ansible:__pkg__"],
+)
+
 # gazelle:prefix gilti.dev/hrc
 # gazelle:exclude dist
 
@@ -34,12 +56,15 @@ gazelle(name = "gazelle")
 test_suite(
     name = "tests",
     tests = [
+        "//ansible:collection_test",
         "//cmd:cmd_test",
         "//internal/listener:listener_test",
         "//internal/process:process_test",
         "//internal/runtime:runtime_test",
         "//internal/worker:runtime_config_test",
         "//internal/worker:worker_test",
+        "//tools/rules_ansible:collection_test",
+        "//tools/rules_ansible:requirements.test",
         "//tools/rules_service:scripts_test",
     ],
 )
@@ -50,6 +75,7 @@ filegroup(
         "BUILD.bazel",
         "MODULE.bazel",
     ] + [
+        "//ansible:starlark_sources",
         "//cmd:BUILD.bazel",
         "//internal/listener:BUILD.bazel",
         "//internal/process:BUILD.bazel",
@@ -57,6 +83,7 @@ filegroup(
         "//internal/worker:starlark_sources",
         "//tools:starlark_sources",
         "//tools/format:BUILD.bazel",
+        "//tools/rules_ansible:starlark_sources",
         "//tools/rules_msbuild:starlark_sources",
         "//tools/rules_service:starlark_sources",
     ],

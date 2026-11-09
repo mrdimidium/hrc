@@ -2,12 +2,122 @@
 
 ## Contents
 
+- [Ansible collection](#ansible-collection)
 - [Manual installation](#manual-installation)
   - [Prerequisites](#prerequisites)
   - [Download](#download)
   - [Installation](#installation-1)
   - [Upgrading](#upgrading)
   - [Removal](#removal)
+
+## Ansible collection
+
+The `dimidiumlabs.hrc` collection provides two roles: `install` and `remove`.
+Each collection archive pins the filenames and SHA-256 hashes of one hrc
+release's binaries. On the Ansible controller (Linux or macOS), use a fresh
+working directory to download and install the collection from the latest
+release:
+
+```sh
+version=$(curl -fsL https://github.com/mrdimidium/hrc/releases/latest/download/VERSION)
+release="https://github.com/mrdimidium/hrc/releases/download/release-$version"
+archive="ansible-collection-$version.tar.gz"
+
+curl -fLO "$release/$archive" -O "$release/SHASUMS256.txt"
+case $(uname -s) in
+    Darwin) shasum -a 256 -c --ignore-missing SHASUMS256.txt ;;
+    *) sha256sum -c --ignore-missing SHASUMS256.txt ;;
+esac
+
+ansible-galaxy collection install "./$archive"
+```
+
+Stop if download or checksum verification fails. To install a specific release,
+set `version` to its version number instead of fetching `VERSION`.
+
+An HTTPS URL to the archive, including a mirror or S3, can also be used as a
+`type: url` entry in a collection `requirements.yml`. Verify the collection
+itself before installation; the embedded hashes verify the binaries, not the
+collection.
+
+Requires Ansible Core 2.18+, `ansible.windows` 3+ for Windows, gathered host
+facts, and administrative access. Linux supports systemd and OpenRC with glibc;
+install the [native Worker dependencies](#prerequisites) first. macOS needs
+Python for Ansible. Windows supports SSH/PowerShell or WinRM. Build tools,
+Docker, OS updates and SSH configuration are not managed by these roles.
+
+### Install and upgrade
+
+```yaml
+- hosts: runners
+  become: true # Omit on Windows when connecting as an administrator.
+  roles:
+    - role: dimidiumlabs.hrc.install
+      vars:
+        hrc_config:
+          id: build-01
+          quota: { cpu: 2, memory: 4GiB }
+          groups:
+            - url: https://github.com/your-org/your-repo
+              name: builds
+              labels: [linux, X64]
+              pat: { type: file, value: /etc/hrc/secrets/github-token }
+        hrc_secrets:
+          github-token: "{{ vault_github_token }}"
+```
+
+Public variables:
+
+| Variable              | Default                    | Meaning                                                                                               |
+| --------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `hrc_config`          | Required                   | Mapping written as hrc's JSON configuration. Must contain `id` and `groups`.                          |
+| `hrc_secrets`         | `{}`                       | Mapping of simple filenames to secret contents, installed under the secrets directory.                |
+| `hrc_artifact_source` | URL supplied by release CI | Base HTTP(S) URL or absolute directory **on the Ansible controller** containing the release archives. |
+
+The role supplies `pathWorker`, `dirRunner`, `dirBuilds` and `dirLogs` defaults;
+`hrc_config` can override them. Other fields are passed through unchanged; see
+[configuration and operation](./usage.md). Secret values and configuration are
+not logged or diffed. Omitted secret files are retained: revoke credentials
+explicitly. Jobs run as the controller's service account and can read its
+credentials; use only trusted jobs.
+
+The default artifact source is supplied by release CI and embedded in the
+collection, not inferred from the version.
+
+To vendor binaries, copy the release tarballs without renaming them and set
+`hrc_artifact_source` to their directory. Changing the source never changes or
+disables the pinned checksum checks. WinSW is bundled privately on Windows; the
+role does not use or change a global WinSW installation.
+
+Upgrade by installing a newer collection. There is no independent binary version
+override. The role enables and starts the service; installation or configuration
+changes restart it, **terminating active jobs and cleaning up their
+workspaces**. Schedule upgrades accordingly. An unchanged apply does not restart
+it. `--check` does not install or stop anything; configuration tasks are skipped
+if installation is needed.
+
+| OS      | Config/secrets parent | State                      | Logs                      |
+| ------- | --------------------- | -------------------------- | ------------------------- |
+| Linux   | `/etc/hrc`            | `/var/lib/hrc`             | `/var/log/hrc`            |
+| macOS   | `/usr/local/etc/hrc`  | `/usr/local/var/hrc`       | `/Library/Logs/hrc`       |
+| Windows | `C:\ProgramData\hrc`  | `C:\ProgramData\hrc\state` | `C:\ProgramData\hrc\logs` |
+
+### Remove
+
+```yaml
+- hosts: runners
+  become: true
+  roles:
+    - role: dimidiumlabs.hrc.remove
+      vars:
+        hrc_remove_data: false
+```
+
+`hrc_remove_data` defaults to `false`: remove the service, binaries and private
+WinSW, retaining configuration, secrets, state, logs and the Unix account. Set
+it to `true` to delete configuration, secrets, state and logs at the default
+locations as well. Custom data paths supplied in `hrc_config` are not removed.
+The Unix account is retained in either case. Removal terminates active jobs.
 
 ## Manual installation
 

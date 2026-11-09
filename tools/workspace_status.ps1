@@ -79,6 +79,9 @@ function Main {
     if (-not $commit) { $commit = 'unknown' }
     $version = Resolve-Version $base $mode $commit
     Write-Output "STABLE_HRC_VERSION $version"
+    $fullCommit = Get-GitValue @('rev-parse', 'HEAD')
+    if (-not $fullCommit) { $fullCommit = 'unknown' }
+    Write-Output "STABLE_HRC_COMMIT $fullCommit"
 }
 
 try {

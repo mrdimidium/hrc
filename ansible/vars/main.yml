@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+_hrc_os: "{{ 'windows' if ansible_facts.os_family == 'Windows' else ansible_facts.system | lower }}"
+_hrc_arch: "{{ {'x86_64': 'amd64', 'AMD64': 'amd64', 'aarch64': 'arm64', 'arm64': 'arm64'}.get(ansible_facts.architecture2 | default(ansible_facts.architecture), '') }}"
+
+_hrc_path: "{{ _hrc_paths[_hrc_os] }}"
+_hrc_paths:
+  linux:
+    config: /etc/hrc
+    state: /var/lib/hrc
+    logs: /var/log/hrc
+    bin: /usr/local/bin
+    runtime: /usr/local/lib/hrc
+    service: "{{ '/etc/init.d/hrc' if ansible_facts.service_mgr | default('') == 'openrc' else '/etc/systemd/system/hrc.service' }}"
+
+  darwin:
+    config: /usr/local/etc/hrc
+    state: /usr/local/var/hrc
+    logs: /Library/Logs/hrc
+    bin: /usr/local/bin
+    runtime: /usr/local/lib/hrc
+    service: /Library/LaunchDaemons/org.hrc.plist
+
+  windows:
+    config: C:\ProgramData\hrc
+    state: C:\ProgramData\hrc\state
+    logs: C:\ProgramData\hrc\logs
+    bin: C:\Program Files\hrc
+    runtime: C:\Program Files\hrc\lib\hrc
+    service: C:\Program Files\hrc\hrc-service.xml

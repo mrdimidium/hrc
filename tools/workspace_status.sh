@@ -91,6 +91,8 @@ main() (
     commit=${commit:-unknown}
     version=$(resolve_version "$base" "$mode" "$commit")
     printf 'STABLE_HRC_VERSION %s\n' "$version"
+    full_commit=$(git_value rev-parse HEAD)
+    printf 'STABLE_HRC_COMMIT %s\n' "${full_commit:-unknown}"
 )
 
 main

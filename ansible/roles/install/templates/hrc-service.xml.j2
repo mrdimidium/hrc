@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-FileCopyrightText: 2026 Nikolay Govorov -->
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+<service>
+  <id>hrc</id>
+  <name>hrc</name>
+  <description>Hosted Runner Controller</description>
+
+  <executable>{{ _hrc_path.bin | e }}\hrc.exe</executable>
+  <arguments>-config "{{ _hrc_path.config | e }}\hrc.json"</arguments>
+  <workingdirectory>{{ _hrc_path.state | e }}</workingdirectory>
+
+  <log mode="roll" />
+  <logpath>{{ _hrc_path.logs | e }}</logpath>
+
+  <startmode>Manual</startmode>
+  <serviceaccount>
+    <domain>NT AUTHORITY</domain>
+    <user>LocalService</user>
+  </serviceaccount>
+  <onfailure action="restart" delay="10 sec" />
+  <stoptimeout>60 sec</stoptimeout>
+</service>
