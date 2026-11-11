@@ -19,11 +19,7 @@ bool_flag(
 
 filegroup(
     name = "docs",
-    srcs = [
-        "docs/README.md",
-        "docs/installation.md",
-        "docs/usage.md",
-    ],
+    srcs = glob(["docs/*.rst"], exclude = ["docs/internal/*"]),
     visibility = ["//cmd:__pkg__"],
 )
 

@@ -23,23 +23,30 @@ publish() {
 }
 
 notes() {
-    local section=$1 required=$2 line changes= generated commits= in_section=false
-    [[ -r docs/CHANGELOG.md ]] || fail 'Could not read docs/CHANGELOG.md'
+    local section=$1 required=$2 line previous= changes= generated commits= in_section=false
+    [[ -r docs/changelog.rst ]] || fail 'Could not read docs/changelog.rst'
     while IFS= read -r line || [[ -n "$line" ]]; do
         if [[ "$in_section" == false ]]; then
-            if [[ "$line" == "## [$section]"* ]]; then
+            if [[ "$line" == "\`$section\`_"* ]]; then
                 in_section=true
             fi
-        elif [[ "$line" == '## '* || "$line" == '['*']: '* ]]; then
+        elif [[ "$line" == \`*\`_* || "$line" == '.. _'* ]]; then
             break
+        elif [[ "$line" =~ ^-+$ ]]; then
+            continue
+        elif [[ "$line" =~ ^~+$ ]]; then
+            changes="${changes%"$previous"$'\n'}### $previous"$'\n'
         else
             changes+="$line"$'\n'
         fi
-    done < docs/CHANGELOG.md
+        previous=$line
+    done < docs/changelog.rst
+    # GitHub release notes are Markdown, unlike the source changelog.
+    changes=${changes//\`\`/\`}
     changes="${changes#"${changes%%[![:space:]]*}"}"
     changes="${changes%"${changes##*[![:space:]]}"}"
     if [[ "$required" == true && -z "$changes" ]]; then
-        fail "docs/CHANGELOG.md has no notes under ## [$section]"
+        fail "docs/changelog.rst has no notes under $section"
     fi
     generated=$(gh api --method POST "repos/$GH_REPO/releases/generate-notes" -f "tag_name=$tag" --jq '.body') || fail "Could not generate release notes for $tag"
     while IFS= read -r line; do
