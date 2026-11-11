@@ -67,5 +67,13 @@ SPDX-License-Identifier: BSD-3-Clause
 {% endblock %}
 
 {% block footer %}
-<footer class="page__footer">{{ super() }}</footer>
+<footer class="page__footer">
+  {% if release %}
+  <p class="page__build">
+    {{ _('Version') }} <code>{{ release|e }}</code>{% if build_commit %}
+    · {{ _('Commit') }} <code>{{ build_commit|e }}</code>{% endif %}
+  </p>
+  {% endif %}
+  {{ super() }}
+</footer>
 {% endblock %}

@@ -37,6 +37,16 @@ Installation
 See the `installation guide <./installation.rst>`__ for macOS, Linux, and Windows,
 then `configure and manage the service <./usage.rst>`__.
 
+Package signing
+---------------
+
+The `package signing public key <https://pkg.dimidiumlabs.io/packages.gpg>`__
+has the primary-key fingerprint:
+
+.. code-block:: text
+
+   60BD 9813 FF8B 4DED C9B7 EB67 52D9 2514 660E 2301
+
 License
 -------
 

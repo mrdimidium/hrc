@@ -42,6 +42,11 @@ def _docs_archive_impl(ctx):
             work=$(mktemp -d)
             trap 'rm -rf "$work"' EXIT
             "$1" --stage . "$work/src"
+            export HRC_DOCS_VERSION="$(awk '$1 == "STABLE_HRC_VERSION" { print $2 }' "$6")"
+            export HRC_DOCS_COMMIT="$(awk '$1 == "STABLE_HRC_COMMIT" { print $2 }' "$6")"
+            if [ -z "$HRC_DOCS_VERSION" ]; then
+                export HRC_DOCS_VERSION="$(tr -d '\\r\\n' < "$5")"
+            fi
             SOURCE_DATE_EPOCH=0 "$2" -b html -n -W --keep-going \\
                 -c "$3" -d "$work/doctrees" "$work/src" "$work/html"
             SOURCE_DATE_EPOCH=0 "$2" -b text -n -W --keep-going \\

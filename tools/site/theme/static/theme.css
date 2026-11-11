@@ -30,6 +30,11 @@
   padding: 1rem 1.5rem;
 }
 
+.page__build {
+  margin: 0 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
 .site-sidebar {
   min-width: 0;
   align-self: start;

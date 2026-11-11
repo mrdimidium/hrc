@@ -19,6 +19,8 @@ html_theme_path = [str(Path(__file__).resolve().parent)]
 html_css_files = ["theme.css"]
 
 html_title = project
+release = os.environ.get("HRC_DOCS_VERSION", "")
+html_context = {"build_commit": os.environ.get("HRC_DOCS_COMMIT", "")}
 # Keep the archive relocatable: no deployment URL or absolute canonical links.
 html_show_sourcelink = False
 html_copy_source = False
