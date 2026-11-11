@@ -128,8 +128,15 @@ func TestMain(m *testing.M) {
 			}
 			result = 3
 		} else {
-			// Outlast half the fixture lease to exercise periodic renewal.
-			time.Sleep(1500 * time.Millisecond)
+			// Finish only after periodic renewal, not after a scheduling-sensitive
+			// sleep that can expire before the controller's renewal timer runs.
+			req, _ := http.NewRequest("GET", job.Endpoint+"/renewed", nil)
+			req.Header.Set("Authorization", "Bearer job-token")
+			response, err := http.DefaultClient.Do(req)
+			if err != nil {
+				os.Exit(46)
+			}
+			response.Body.Close()
 		}
 		if mode == "failure" {
 			result = 2
@@ -157,6 +164,8 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 	var polls, renews, completes, deletes, tokens, sessions, acquires atomic.Int32
 	started := make(chan struct{})
 	var startedOnce sync.Once
+	renewed := make(chan struct{})
+	var renewedOnce sync.Once
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -269,7 +278,16 @@ func controllerFixture(t *testing.T, mode string) (*testRunner, *atomic.Int32, *
 				return
 			}
 			// Leave scheduling headroom on loaded CI hosts, especially Windows.
-			json.NewEncoder(w).Encode(map[string]any{"lockedUntil": time.Now().Add(2 * time.Second)})
+			json.NewEncoder(w).Encode(map[string]any{"lockedUntil": time.Now().Add(4 * time.Second)})
+			if n > 1 {
+				renewedOnce.Do(func() { close(renewed) })
+			}
+		case "/job/renewed":
+			select {
+			case <-renewed:
+				w.WriteHeader(204)
+			case <-r.Context().Done():
+			}
 		case "/job/started":
 			startedOnce.Do(func() { close(started) })
 			w.WriteHeader(204)
@@ -379,7 +397,14 @@ func TestControllerJobLifecycle(t *testing.T) {
 					}
 				}()
 			}
-			result, err := runJob(ctx, w.network, w.local, t.TempDir(), 150*time.Millisecond)
+			// Only the uncooperative Worker needs a deliberately short grace.
+			// A cooperative child must have time to exit after sending completion,
+			// or the controller correctly treats its forced exit as infrastructure failure.
+			grace := 5 * time.Second
+			if mode == "kill" {
+				grace = 150 * time.Millisecond
+			}
+			result, err := runJob(ctx, w.network, w.local, t.TempDir(), grace)
 			switch mode {
 			case "success", "refresh", "retry":
 				if result != worker.Succeeded || err != nil {

@@ -118,7 +118,7 @@ func (g *PGroup) killTracked() error {
 		}
 		var killErr error
 		for _, pid := range pids {
-			p, err := os.FindProcess(pid)
+			p, err := findTrackedProcess(pid)
 			if err == nil {
 				err = killTrackedProcess(p, deadline)
 				p.Release()

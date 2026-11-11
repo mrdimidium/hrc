@@ -13,6 +13,50 @@ import (
 	"time"
 )
 
+func TestFindTrackedProcessErrors(t *testing.T) {
+	// Waiting for a child does not guarantee that its PID is gone: external
+	// handles can keep the exited process object alive indefinitely. Use an
+	// invalid PID instead of depending on object teardown (or PID reuse).
+	// OpenProcess converts -1 to DWORD 0xffffffff, which is not a process ID.
+	// OpenProcess also returns ERROR_INVALID_PARAMETER for PID 0 (System Idle).
+	for _, test := range []struct {
+		name string
+		pid  int
+		want error
+	}{
+		{"missing", -1, os.ErrProcessDone},
+		{"system idle", 0, os.ErrProcessDone},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tracked, err := findTrackedProcess(test.pid)
+			if tracked != nil {
+				tracked.Release()
+			}
+			if !errors.Is(err, test.want) {
+				t.Fatalf("find process %d = %v, want %v", test.pid, err, test.want)
+			}
+		})
+	}
+}
+
+func TestFindTrackedProcessRunning(t *testing.T) {
+	p, start, _, _ := startChild(t, "report")
+	tracked, err := findTrackedProcess(p.cmd.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tracked.Release()
+	if tracked.Pid != p.cmd.Process.Pid {
+		t.Fatalf("found PID %d, want %d", tracked.Pid, p.cmd.Process.Pid)
+	}
+	if _, err := start.Write([]byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := p.Wait(); err != nil || state.ExitCode() != 0 {
+		t.Fatalf("Wait = %v, %v", state, err)
+	}
+}
+
 func TestKillTrackedProcessAlreadyExited(t *testing.T) {
 	p, start, _, _ := startChild(t, "report")
 	tracked, err := os.FindProcess(p.cmd.Process.Pid)

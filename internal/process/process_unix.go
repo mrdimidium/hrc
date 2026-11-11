@@ -26,6 +26,10 @@ func (p *Process) configure(files []*os.File) error {
 
 func (p *Process) attach() error { return nil }
 
+func findTrackedProcess(pid int) (*os.Process, error) {
+	return os.FindProcess(pid)
+}
+
 func killTrackedProcess(p *os.Process, _ time.Time) error {
 	return p.Kill()
 }

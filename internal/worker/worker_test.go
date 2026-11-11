@@ -501,11 +501,19 @@ func TestWorkerCloseDuringStartup(t *testing.T) {
 func TestWorkerStartupTimeout(t *testing.T) {
 	config, _ := workerTestConfig(t, "blocked", 0)
 	w := newTestWorker(t, config)
+	payload := json.RawMessage(`{"data":"` + strings.Repeat("x", 1<<20) + `"}`)
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
-	payload := json.RawMessage(`{"data":"` + strings.Repeat("x", 1<<20) + `"}`)
 	if err := w.StartJob(ctx, payload, ""); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("blocked StartJob: %v", err)
+	}
+	// On a loaded host the deadline can expire before StartJob consumes the
+	// Worker. Such a Worker correctly remains reusable and Done stays open.
+	if !w.started {
+		if result, err := w.Wait(); result != Unknown || !errors.Is(err, ErrNotStarted) {
+			t.Fatalf("Wait before startup = %v, %v", result, err)
+		}
+		return
 	}
 	if result, err := waitTestWorker(t, w); result != Unknown || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Wait after startup timeout = %v, %v", result, err)

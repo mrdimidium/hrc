@@ -49,6 +49,16 @@ func (p *Process) attach() error {
 	return windows.AssignProcessToJobObject(p.group.platform.job, process)
 }
 
+// A PID found by the environment scan can disappear before OpenProcess.
+// Windows reports ERROR_INVALID_PARAMETER for a process that no longer exists.
+func findTrackedProcess(pid int) (*os.Process, error) {
+	p, err := os.FindProcess(pid)
+	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		return nil, os.ErrProcessDone
+	}
+	return p, err
+}
+
 // TerminateProcess is asynchronous. A subsequent environment scan can still
 // find the dying process, and killing an already terminated process returns
 // ERROR_ACCESS_DENIED, not os.ErrProcessDone. Wait on the same process handle
