@@ -54,7 +54,7 @@ service(
     service = "hrc",
     description = "Hosted Runner Controller",
     deps = [
-        "//:docs",
+        "//:docs_sources",
         "//:licenses",
         "//internal/worker:runner",
     ],

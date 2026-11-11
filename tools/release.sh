@@ -96,11 +96,17 @@ done
 : "${S3_PUBLIC_URL:?S3_PUBLIC_URL is required as the public mirror base URL}"
 mirror="${S3_PUBLIC_URL%/}/hrc/builds/$version"
 HRC_ARTIFACT_SOURCE=$mirror
-bazel build //ansible:collection "--//ansible:artifact_source=$HRC_ARTIFACT_SOURCE"
+HRC_VERSION=$version HRC_BUILD_MODE=release \
+    bazel build //ansible:collection //:docs "--//ansible:artifact_source=$HRC_ARTIFACT_SOURCE"
 collection="ansible-collection-$version.tar.gz"
 cp bazel-bin/ansible/collection.tar.gz "$directory/$collection"
 (cd "$directory" && sha256sum "$collection") >> "$directory/SHASUMS256"
 names+=("$collection")
+
+documentation="hrc-docs-$version.tar.gz"
+cp "bazel-bin/docs/$documentation" "$directory/"
+(cd "$directory" && sha256sum "$documentation") >> "$directory/SHASUMS256"
+names+=("$documentation")
 
 revision=${GITHUB_SHA:-$(git rev-parse HEAD)}
 [[ "$revision" =~ ^[0-9a-fA-F]{40}$ ]] || fail 'Release commit must be a full Git SHA'
@@ -110,6 +116,7 @@ for name in "${names[@]}"; do
     size=$(wc -c < "$directory/$name")
     os= arch= kind=archive
     case "$name" in
+        hrc-docs-*) kind=documentation ;;
         hrc-*)
             target=${name#hrc-}
             arch=${target%%-*}

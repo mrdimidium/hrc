@@ -28,6 +28,6 @@ SPDX-FileCopyrightText = "2026 Nikolay Govorov"
 SPDX-License-Identifier = "BSD-3-Clause"
 
 [[annotations]]
-path = ["AGENTS.md", "ansible/README.md", "docs/*"]
+path = ["AGENTS.md", "ansible/README.md", "docs/**"]
 SPDX-FileCopyrightText = "2026 Nikolay Govorov"
 SPDX-License-Identifier = "CC-BY-4.0"

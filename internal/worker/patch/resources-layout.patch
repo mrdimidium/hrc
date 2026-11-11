@@ -1,5 +1,6 @@
+# SPDX-FileCopyrightText: 2019 GitHub
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: BSD-3-Clause AND MIT
 
 diff --git a/src/Runner.Common/HostContext.cs b/src/Runner.Common/HostContext.cs
 --- a/src/Runner.Common/HostContext.cs

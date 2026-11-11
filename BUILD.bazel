@@ -3,6 +3,7 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@gazelle//:def.bzl", "gazelle")
+load("//tools:tools.bzl", "docs_archive")
 
 exports_files(["LICENSE"])
 
@@ -18,9 +19,28 @@ bool_flag(
 )
 
 filegroup(
-    name = "docs",
-    srcs = glob(["docs/*.rst"], exclude = ["docs/internal/*"]),
+    name = "docs_sources",
+    srcs = glob(
+        ["docs/*.rst"],
+        exclude = ["docs/internal/*"],
+    ),
     visibility = ["//cmd:__pkg__"],
+)
+
+alias(
+    name = "docs-dev",
+    actual = "//tools:site_dev",
+)
+
+docs_archive(
+    name = "docs",
+    srcs = glob([
+        "docs/*.rst",
+        "LICENSES/*.txt",
+    ]) + ["//tools:site_theme"],
+    conf = "//tools:site/conf.py",
+    version_file = "VERSION",
+    visibility = ["//tools:__pkg__"],
 )
 
 filegroup(
@@ -39,6 +59,7 @@ filegroup(
             "dist/release/VERSION",
             "dist/release/hrc-*.tar.gz",
         ],
+        exclude = ["dist/release/hrc-docs-*.tar.gz"],
         allow_empty = True,
     ),
     visibility = ["//ansible:__pkg__"],
@@ -59,6 +80,8 @@ test_suite(
         "//internal/runtime:runtime_test",
         "//internal/worker:runtime_config_test",
         "//internal/worker:worker_test",
+        "//tools:requirements.test",
+        "//tools:site_test",
         "//tools/rules_ansible:collection_test",
         "//tools/rules_ansible:requirements.test",
         "//tools/rules_service:scripts_test",

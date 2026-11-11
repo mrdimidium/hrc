@@ -40,8 +40,8 @@ then `configure and manage the service <./usage.rst>`__.
 License
 -------
 
-Source code is licensed under `BSD-3-Clause <../LICENSE>`__. Documentation is
+Source code is licensed under `BSD-3-Clause <../LICENSES/BSD-3-Clause.txt>`__. Documentation is
 licensed under `CC-BY-4.0 <../LICENSES/CC-BY-4.0.txt>`__.
 
-The bundled GitHub runner is MIT licensed; its license and .NET dependency
-notices are included in the runner payload.
+The bundled GitHub runner is `MIT <../LICENSES/MIT.txt>`__ licensed;
+its license and .NET dependency notices are included in the runner payload.
