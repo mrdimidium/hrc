@@ -19,7 +19,7 @@ html_theme_path = [str(Path(__file__).resolve().parent)]
 html_css_files = ["theme.css"]
 
 html_title = project
-html_baseurl = "https://dimidiumlabs.io/hrc/"
+# Keep the archive relocatable: no deployment URL or absolute canonical links.
 html_show_sourcelink = False
 html_copy_source = False
 html_show_sphinx = True

@@ -24,7 +24,7 @@ collection from the latest release:
 
 .. code-block:: sh
 
-   version=$(curl -fsL https://pkg.dimidiumlabs.io/hrc/channels/stable.json | jq -er '.version')
+   version=$(curl -fsL https://pkg.dimidiumlabs.io/hrc/index.json | jq -er '.channels.stable')
    release="https://pkg.dimidiumlabs.io/hrc/builds/$version"
    archive="ansible-collection-$version.tar.gz"
 
@@ -243,7 +243,7 @@ Requires ``curl`` and ``jq``.
    case $(uname -s) in Darwin) os=darwin ;; Linux) os=linux ;; MINGW*|MSYS*) os=windows ;; esac
    case ${PROCESSOR_ARCHITEW6432:-${PROCESSOR_ARCHITECTURE:-$(uname -m)}} in x86_64|AMD64) arch=amd64 ;; arm64|aarch64|ARM64) arch=arm64 ;; esac
 
-   version=$(curl -fsL https://pkg.dimidiumlabs.io/hrc/channels/stable.json | jq -er '.version')
+   version=$(curl -fsL https://pkg.dimidiumlabs.io/hrc/index.json | jq -er '.channels.stable')
    release="https://pkg.dimidiumlabs.io/hrc/builds/$version"
    archive="hrc-$arch-$os-$version.tar.gz"
    curl -fLO "$release/$archive" -O "$release/SHASUMS256"
@@ -259,7 +259,7 @@ Stop if checksum verification fails.
    $machine = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
    $arch = switch ($machine) { AMD64 { 'amd64' } ARM64 { 'arm64' } }
 
-   $version = (Invoke-RestMethod 'https://pkg.dimidiumlabs.io/hrc/channels/stable.json').version
+   $version = (Invoke-RestMethod 'https://pkg.dimidiumlabs.io/hrc/index.json').channels.stable
    $release = "https://pkg.dimidiumlabs.io/hrc/builds/$version"
    $archive = "hrc-$arch-windows-$version.tar.gz"
    Invoke-WebRequest "$release/SHASUMS256" -OutFile SHASUMS256
@@ -299,10 +299,15 @@ the manifest, avoiding a circular dependency.
 The public mirror stores every build at
 ``https://pkg.dimidiumlabs.io/hrc/builds/{version}/``, using the full version,
 including dev suffixes and build metadata. Files at these URLs are immutable.
-``channels/stable.json`` and ``channels/dev.json`` are mutable copies of the chosen
-build's ``manifest.json``, updated only after publication to S3 and GitHub
-completes. GitHub Releases contain the same files, but the GitHub ``dev`` release
-retains only the current build. The Ansible collection uses the immutable
+``index.json`` is the mutable publication index. It contains ``schemaVersion: 1``,
+a ``versions`` array of published build versions, and a ``channels`` object whose
+``stable`` and ``dev`` fields identify the chosen builds. A channel can be absent
+until its first promotion. Versions are added after their complete upload to S3;
+channel pointers are updated only after publication to S3 and GitHub completes.
+Artifact metadata remains in each build's immutable ``manifest.json`` and is not
+duplicated in the index. Consumers should not rely on the order of ``versions``.
+GitHub Releases contain the same files, but the GitHub ``dev`` release retains
+only the current build. The Ansible collection uses the immutable
 mirror URLs by default.
 
 **Optional: verify build provenance**

@@ -19,7 +19,6 @@ from release_manifest import PLATFORMS, release_manifest, write_manifest
 SOURCE = Path(sys.argv.pop(1)).resolve().parent
 WINDOWS = Path(sys.argv.pop(1)).resolve()
 VERSION = "0.4.0-dev.12+abc01"
-COMMIT = "0123456789abcdef0123456789abcdef01234567"
 ARTIFACT_SOURCE = "https://artifacts.example.test/release"
 
 
@@ -82,14 +81,15 @@ class CollectionTest(unittest.TestCase):
             "templates": {"README.md": str(SOURCE / "README.md"),
                           "galaxy.yml": str(SOURCE / "galaxy.yml.tpl"),
                           "roles/install/vars/release.yml": str(release)},
-            "substitutions": {"@VERSION@": VERSION, "@COMMIT@": COMMIT, "@ARTIFACT_SOURCE@": ARTIFACT_SOURCE},
+            "substitutions": {"@VERSION@": VERSION, "@ARTIFACT_SOURCE@": ARTIFACT_SOURCE},
             "substitution_files": {}, "stamp_substitutions": {}, "validation": {},
         }, self.root / "collection.tar.gz")
         with tarfile.open(archive) as collection:
             metadata = json.load(collection.extractfile("MANIFEST.json"))["collection_info"]
             self.assertEqual(metadata["version"], VERSION)
-            self.assertIn(COMMIT, metadata["documentation"])
-            self.assertIn(COMMIT, collection.extractfile("README.md").read().decode())
+            self.assertEqual(metadata["documentation"], f"https://dimidiumlabs.io/hrc/doc/{VERSION}/installation.html")
+            self.assertIn(f"https://dimidiumlabs.io/hrc/doc/{VERSION}/installation.html#ansible-collection",
+                          collection.extractfile("README.md").read().decode())
             self.assertEqual(json.load(collection.extractfile("roles/install/vars/release.yml")), {
                 "_hrc_release_version": VERSION, "_hrc_release_source": ARTIFACT_SOURCE,
                 "_hrc_release_artifacts": release_manifest(self.artifacts)[1],

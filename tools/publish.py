@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Publish immutable hrc builds and promote channel manifests in S3."""
+"""Publish immutable hrc builds and maintain their shared S3 index."""
 
 import argparse
 import hashlib
@@ -17,7 +17,8 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 IMMUTABLE = "public, max-age=31536000, immutable"
-CHANNEL = "public, max-age=60, must-revalidate"
+INDEX = "hrc/index.json"
+INDEX_CACHE = "public, max-age=60, must-revalidate"
 
 
 def digest(data):
@@ -88,6 +89,69 @@ class Storage:
                 raise ValueError(f"Immutable object has different content: {key}") from None
 
 
+def parse_manifest(raw):
+    manifest = json.loads(raw)
+    if manifest["schemaVersion"] != 1 or manifest["product"] != "hrc":
+        raise ValueError("Unsupported build manifest")
+    version_key(manifest["version"])
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", manifest["commit"]):
+        raise ValueError("Manifest must contain the full source commit")
+    return manifest
+
+
+def read_index(storage):
+    raw, etag = storage.read_versioned(INDEX)
+    if raw is None:
+        return {"schemaVersion": 1, "channels": {}, "versions": []}, etag
+    index = json.loads(raw)
+    if (index["schemaVersion"] != 1 or not isinstance(index["channels"], dict)
+            or not isinstance(index["versions"], list)):
+        raise ValueError("Unsupported publication index")
+    for version in index["versions"]:
+        version_key(version)
+    if any(channel not in {"stable", "dev"} or version not in index["versions"]
+           for channel, version in index["channels"].items()):
+        raise ValueError("Index channels must reference listed versions")
+    return index, etag
+
+
+def update_index(storage, versions, channels=None):
+    versions = set(versions)
+    for version in versions:
+        version_key(version)
+    for _ in range(8):
+        index, etag = read_index(storage)
+        previous = json.dumps(index, sort_keys=True)
+        index["versions"] = sorted(set(index["versions"]) | versions,
+                                   key=lambda version: (version_key(version), version), reverse=True)
+        for channel, version in (channels or {}).items():
+            if channel not in {"stable", "dev"} or version not in index["versions"]:
+                raise ValueError("Channel must reference a listed version")
+            current = index["channels"].get(channel)
+            if current is not None:
+                old, new = version_key(current), version_key(version)
+                if old > new:
+                    continue
+                if old == new and current != version:
+                    raise ValueError(f"Channel {channel} has a different build with equal version precedence")
+            index["channels"][channel] = version
+        if etag is not None and json.dumps(index, sort_keys=True) == previous:
+            return index
+        condition = {"IfMatch": etag} if etag is not None else {"IfNoneMatch": "*"}
+        try:
+            storage.client.put_object(
+                Bucket=storage.bucket, Key=INDEX,
+                Body=(json.dumps(index, indent=2, sort_keys=True) + "\n").encode(),
+                ContentType="application/json", CacheControl=INDEX_CACHE, **condition,
+            )
+            return index
+        except ClientError as error:
+            if not storage.conflict(error):
+                raise
+            # Re-read and merge: stable and dev publishers share this object.
+    raise ValueError("Publication index keeps changing; retry publication")
+
+
 def verify_signature(directory, keyring):
     subprocess.run(
         ["gpg", "--homedir", str(keyring), "--batch", "--verify",
@@ -143,35 +207,15 @@ def publish(storage, directory, manifest, keyring):
     for name in [n for n in names if n != "manifest.json"] + ["SHASUMS256", "manifest.json"]:
         content_type = "application/gzip" if name.endswith(".tar.gz") else mimetypes.guess_type(name)[0] or "text/plain"
         storage.immutable(f"{prefix}/{name}", (directory / name).read_bytes(), content_type)
+    update_index(storage, [manifest["version"]])
     print(f"Published {prefix}")
 
 
 def promote(storage, channel, manifest, raw_manifest):
-    key = f"hrc/channels/{channel}.json"
     if storage.read(f"hrc/builds/{manifest['version']}/manifest.json") != raw_manifest:
         raise ValueError("Build manifest must be published before promoting a channel")
-    existing, etag = storage.read_versioned(key)
-    if existing is not None:
-        previous = json.loads(existing)
-        old, new = version_key(previous["version"]), version_key(manifest["version"])
-        if old > new:
-            print(f"Keep newer {channel} version {previous['version']}")
-            return
-        if old == new and existing != raw_manifest:
-            raise ValueError(f"Channel already has a different build with equal version precedence: {key}")
-    # A channel is one object: compare-and-swap is enough, without a persistent
-    # lock that could be abandoned when a CI runner dies.
-    condition = {"IfMatch": etag} if etag is not None else {"IfNoneMatch": "*"}
-    try:
-        storage.client.put_object(
-            Bucket=storage.bucket, Key=key, Body=raw_manifest,
-            ContentType="application/json", CacheControl=CHANNEL, **condition,
-        )
-    except ClientError as error:
-        if storage.conflict(error):
-            raise ValueError(f"Channel changed concurrently; retry publication: {key}") from None
-        raise
-    print(f"Promoted {channel} to {manifest['version']}")
+    index = update_index(storage, [manifest["version"]], {channel: manifest["version"]})
+    print(f"Channel {channel}: {index['channels'][channel]}")
 
 
 def main():
@@ -182,21 +226,17 @@ def main():
     parser.add_argument("--promote", action="store_true")
     args = parser.parse_args()
     raw_manifest = (args.input / "manifest.json").read_bytes()
-    manifest = json.loads(raw_manifest)
-    if manifest["schemaVersion"] != 1 or manifest["product"] != "hrc":
-        raise ValueError("Unsupported build manifest")
-    version_key(manifest["version"])
-    if not re.fullmatch(r"[0-9a-fA-F]{40}", manifest["commit"]):
-        raise ValueError("Manifest must contain the full source commit")
+    manifest = parse_manifest(raw_manifest)
     storage = Storage()
+    index, _ = read_index(storage)
     if args.promote:
         promote(storage, args.channel, manifest, raw_manifest)
     else:
         if args.channel == "dev":
-            existing = storage.read("hrc/channels/dev.json")
-            if existing is not None:
-                old, new = version_key(json.loads(existing)["version"]), version_key(manifest["version"])
-                if old > new or (old == new and existing != raw_manifest):
+            current = index["channels"].get("dev")
+            if current is not None:
+                old, new = version_key(current), version_key(manifest["version"])
+                if old > new or (old == new and current != manifest["version"]):
                     raise ValueError("Refusing to replace a newer or conflicting dev publication")
         publish(storage, args.input, manifest, args.keyring)
 

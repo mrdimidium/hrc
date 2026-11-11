@@ -83,8 +83,6 @@ collection(
     },
     settings = {":artifact_source": "@ARTIFACT_SOURCE@"},
     substitution_files = {"//:dist/release/VERSION": "@VERSION@"},
-    stamp_substitutions = {"@COMMIT@": "STABLE_HRC_COMMIT"},
-    validation = {"@COMMIT@": "[0-9a-f]{40}"},
     tags = ["manual"],
 )
 
