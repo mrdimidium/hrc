@@ -3,5 +3,5 @@
 
 boto3==1.43.123
 reuse[charset-normalizer]==6.3.0
-sphinx==9.0.4
+sphinx==9.2.0
 sphinx-autobuild==2025.8.25
