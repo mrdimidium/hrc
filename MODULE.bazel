@@ -81,7 +81,7 @@ http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_
 
 # Native esbuild CLI: no npm installation or system Node.js required.
 # renovate: datasource=npm depName=esbuild
-ESBUILD_VERSION = "0.25.12"
+ESBUILD_VERSION = "0.28.2"
 
 ESBUILD_PLATFORMS = {
     "darwin_arm64": "2e0d011f852e45046ca5c107db54cfc56338f77aca49d227a063696d958451d7",
