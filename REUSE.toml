@@ -15,6 +15,7 @@ path = [
   # hrc configs
   "VERSION",
   "cmd/pkg/hrc.json",
+  "tools/site/assets/**",
 
   # any lock files
   "go.mod",

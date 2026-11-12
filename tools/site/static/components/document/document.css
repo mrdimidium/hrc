@@ -1,0 +1,133 @@
+/*!
+ * SPDX-FileCopyrightText: 2026 Nikolay Govorov
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+@layer components {
+  .document-content {
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+  }
+
+  .document-content :where(a:visited:not(.headerlink):not(:hover):not(:focus-visible)) {
+    color: var(--color-link-visited);
+    text-decoration-color: var(--color-link-visited-underline);
+  }
+
+  /* Adapters for Sphinx-generated article content. */
+  .document-content :where(ul.simple, ol.simple) > li + li {
+    margin-top: 0.25em;
+  }
+
+  .document-content :where(ul.simple, ol.simple) > li > p {
+    margin-bottom: 0;
+  }
+
+  .document-content ol.arabic {
+    list-style-type: decimal;
+  }
+
+  .document-content ol.loweralpha {
+    list-style-type: lower-alpha;
+  }
+
+  .document-content ol.upperalpha {
+    list-style-type: upper-alpha;
+  }
+
+  .document-content ol.lowerroman {
+    list-style-type: lower-roman;
+  }
+
+  .document-content ol.upperroman {
+    list-style-type: upper-roman;
+  }
+
+  .document-content :where(h1, h2, h3, h4, h5, h6) {
+    position: relative;
+  }
+
+  .document-content .headerlink {
+    position: absolute;
+    inset-inline-start: calc(-0.65em - 0.5rem);
+    top: 50%;
+    transform: translateY(-50%);
+    display: block;
+    width: calc(0.65em + 0.5rem);
+    height: 0.65em;
+    font-size: inherit;
+    overflow: hidden;
+    white-space: nowrap;
+    text-indent: -9999px;
+    color: inherit;
+    text-decoration: none;
+    opacity: 0;
+  }
+
+  .document-content .headerlink::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    inset-inline-end: 0.5rem;
+    background: currentColor;
+    mask: url("./headerlink.svg") center / contain no-repeat;
+  }
+
+  .document-content :where(h1, h2, h3, h4, h5, h6):hover > .headerlink,
+  .document-content .headerlink:hover,
+  .document-content .headerlink:focus-visible {
+    opacity: 1;
+  }
+
+  @media (max-width: 48rem) {
+    .document-content :where(h1, h2, h3, h4, h5, h6) {
+      padding-inline-start: 1em;
+    }
+
+    .document-content .headerlink {
+      inset-inline-start: 0;
+      width: 0.65em;
+    }
+
+    .document-content .headerlink::before {
+      inset-inline-end: 0;
+    }
+  }
+
+  .document-content pre {
+    overflow: auto;
+    padding: 0.75rem;
+    border: 1px solid var(--color-border);
+  }
+
+  /* License wording stays verbatim, but long lines wrap like ordinary prose. */
+  .document-content__license pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .document-content table.docutils {
+    display: block;
+    max-width: 100%;
+    overflow: auto;
+    border-collapse: collapse;
+  }
+
+  .document-content table.docutils th,
+  .document-content table.docutils td {
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+    border: 1px solid var(--color-border);
+  }
+
+  .document-content .admonition {
+    margin: 1rem 0;
+    padding: 0 1rem;
+    border-left: 2px solid var(--color-border-strong);
+  }
+
+  .document-content :target {
+    scroll-margin-top: 1rem;
+  }
+}

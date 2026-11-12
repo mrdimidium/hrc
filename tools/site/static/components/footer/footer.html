@@ -1,0 +1,16 @@
+{#
+SPDX-FileCopyrightText: 2026 Nikolay Govorov
+SPDX-License-Identifier: BSD-3-Clause
+#}
+<footer class="site-footer">
+  {% if build_commit %}
+  <p class="site-footer__build">{{ _('Commit') }} <code>{{ build_commit|e }}</code></p>
+  {% endif %}
+  {% if show_copyright %}
+  <p>© {{ copyright|e }}.</p>
+  {% endif %}
+  <p>{{ _('Documentation') }}: <a href="{{ pathto('LICENSES/CC-BY-4.0')|e }}">CC BY 4.0</a>.</p>
+  {% if show_sphinx %}
+  <p>{{ _('Created using') }} <a href="https://www.sphinx-doc.org/">Sphinx</a> {{ sphinx_version|e }}.</p>
+  {% endif %}
+</footer>

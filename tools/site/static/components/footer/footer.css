@@ -1,0 +1,18 @@
+/*!
+ * SPDX-FileCopyrightText: 2026 Nikolay Govorov
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+@layer components {
+  .site-footer {
+    margin-top: 2rem;
+    font-size: 0.75rem;
+    line-height: calc(16 / 12);
+    overflow-wrap: anywhere;
+  }
+
+  .site-footer__build {
+    margin: 0 0 0.5rem;
+    overflow-wrap: anywhere;
+  }
+}

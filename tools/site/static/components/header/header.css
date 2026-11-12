@@ -1,0 +1,60 @@
+/*!
+ * SPDX-FileCopyrightText: 2026 Nikolay Govorov
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+@layer components {
+  .site-header {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .site-header__brand:any-link,
+  .site-header__github:any-link {
+    color: inherit;
+    text-decoration-line: none;
+  }
+
+  .site-header__brand:hover,
+  .site-header__brand:focus-visible,
+  .site-header__github:hover,
+  .site-header__github:focus-visible {
+    text-decoration-line: underline;
+    text-decoration-color: currentColor;
+  }
+
+  .site-header__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    font-size: 1.125rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .site-header__icon {
+    display: block;
+    flex: none;
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+
+  .site-header__version {
+    padding: 0.125rem 0.5rem;
+    border-radius: 0.25rem;
+    background-color: var(--color-navigation-current);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  .site-header__github {
+    margin-inline-start: auto;
+  }
+}

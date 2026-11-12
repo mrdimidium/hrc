@@ -2,8 +2,22 @@
 
 .. toctree::
    :hidden:
-   :maxdepth: 2
+   :caption: Manual
+   :maxdepth: 1
 
-   installation
-   usage
+   Start here <manual/index>
+   manual/host-preparation
+   manual/github-auth
+   manual/installation
+   manual/upgrading
+   manual/removal
+   manual/workflows
+   manual/operation
+
+.. toctree::
+   :hidden:
+   :caption: Reference
+   :maxdepth: 1
+
+   configuration
    changelog

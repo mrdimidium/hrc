@@ -1,0 +1,17 @@
+{#
+SPDX-FileCopyrightText: 2026 Nikolay Govorov
+SPDX-License-Identifier: BSD-3-Clause
+#}
+<aside class="site-sidebar" aria-label="{{ _('Sidebar') }}">
+  <nav class="site-sidebar__navigation" aria-label="{{ _('Documentation') }}">
+    <p class="site-sidebar__overview{% if pagename == root_doc %} site-sidebar__overview--current{% endif %}">
+      <a href="{{ pathto(root_doc)|e }}"{% if pagename == root_doc %} aria-current="page"{% endif %}>{{ _('Overview') }}</a>
+    </p>
+    <div class="site-sidebar__tree">
+      {{ toctree(includehidden=True, maxdepth=1, titles_only=True) }}
+    </div>
+  </nav>
+
+  <p class="site-sidebar__format"><a href="{{ pathto(pagename ~ '.txt', resource=True)|e }}">{{ _('Plain text') }}</a></p>
+  {% include "components/footer/footer.html" %}
+</aside>

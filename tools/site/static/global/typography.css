@@ -1,0 +1,158 @@
+/*!
+ * SPDX-FileCopyrightText: 2026 Nikolay Govorov
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+@layer typography {
+  :where(:root) {
+    --font-family-text: system-ui, -apple-system, BlinkMacSystemFont,
+      "SF UI Text", "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell,
+      "Fira Sans", "Droid Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --font-family-code: Consolas, "Courier New", monospace;
+  }
+
+  :where(body) {
+    font-family: var(--font-family-text);
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  :where(a[href]) {
+    color: var(--color-link);
+    text-decoration-line: underline;
+    text-decoration-color: var(--color-link-underline);
+    text-decoration-thickness: 0.05em;
+    text-underline-offset: 0.15em;
+    text-decoration-skip-ink: auto;
+  }
+
+  :where(a[href]:hover, a[href]:focus-visible) {
+    color: var(--color-link-hover);
+    text-decoration-color: currentColor;
+  }
+
+  :where(a[href]:focus-visible) {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 0.2rem;
+  }
+
+  :where(button, input, select, textarea) {
+    font: inherit;
+  }
+
+  :where(main) {
+    font-size: 1.25rem;
+    line-height: 1.4;
+    overflow-wrap: break-word;
+  }
+
+  :where(h1, h2, h3, h4, h5, h6, p, ul, ol, dl, blockquote, pre) {
+    margin: 0;
+  }
+
+  :where(h1) {
+    margin-bottom: 0.5rem;
+    font-size: 2.25rem;
+    line-height: calc(42 / 36);
+    font-weight: 700;
+  }
+
+  :where(h2) {
+    margin-block: 2.25rem 0.625rem;
+    font-size: 1.625rem;
+    line-height: calc(28 / 26);
+    font-weight: 400;
+  }
+
+  :where(h3, h4, h5, h6) {
+    margin-block: 2.25rem 0;
+    font-size: 1em;
+    line-height: inherit;
+    font-weight: 700;
+  }
+
+  :where(h2 + h3) {
+    margin-top: 0;
+  }
+
+  :where(p, ul, ol, dl, blockquote, pre) {
+    margin-bottom: 0.625rem;
+  }
+
+  :where(ul, ol) {
+    padding-inline-start: 1.5em;
+    list-style-position: outside;
+  }
+
+  :where(ul) {
+    list-style-type: disc;
+  }
+
+  :where(ul ul) {
+    list-style-type: circle;
+  }
+
+  :where(ul ul ul) {
+    list-style-type: square;
+  }
+
+  :where(ol) {
+    list-style-type: decimal;
+  }
+
+  :where(ol ol) {
+    list-style-type: lower-alpha;
+  }
+
+  :where(ol ol ol) {
+    list-style-type: lower-roman;
+  }
+
+  :where(li) {
+    padding-inline-start: 0.15em;
+  }
+
+  :where(li + li) {
+    margin-top: 0.5em;
+  }
+
+  :where(li > ul, li > ol) {
+    margin-block: 0.35em 0;
+  }
+
+  :where(blockquote) {
+    padding-inline-start: 2.5rem;
+  }
+
+  :where(li > :last-child, dd > p:last-child, th > p:last-child, td > p:last-child) {
+    margin-bottom: 0;
+  }
+
+  :where(dt, strong, b, th) {
+    font-weight: 700;
+  }
+
+  :where(dd) {
+    margin: 0 0 0.625rem 2.5rem;
+  }
+
+  :where(code, pre, kbd, samp) {
+    font-family: var(--font-family-code);
+    font-size: 1em;
+  }
+
+  :where(pre) {
+    overflow-wrap: normal;
+  }
+
+  :where(table) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (max-width: 32rem) {
+    :where(h1, h2) {
+      hyphens: auto;
+      text-wrap: balance;
+    }
+  }
+}

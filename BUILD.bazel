@@ -21,8 +21,8 @@ bool_flag(
 filegroup(
     name = "docs_sources",
     srcs = glob(
-        ["docs/*.rst"],
-        exclude = ["docs/internal/*"],
+        ["docs/**/*.rst"],
+        exclude = ["docs/draft/**"],
     ),
     visibility = ["//cmd:__pkg__"],
 )
@@ -34,12 +34,14 @@ alias(
 
 docs_archive(
     name = "docs",
-    srcs = glob([
-        "docs/*.rst",
-        "LICENSES/*.txt",
-    ]) + ["//tools:site_theme"],
+    srcs = glob(
+        [
+            "docs/**/*.rst",
+            "LICENSES/*.txt",
+        ],
+        exclude = ["docs/draft/**"],
+    ) + ["//tools:site_theme"],
     conf = "//tools:site/conf.py",
-    version_file = "VERSION",
     visibility = ["//tools:__pkg__"],
 )
 

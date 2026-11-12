@@ -87,8 +87,8 @@ class CollectionTest(unittest.TestCase):
         with tarfile.open(archive) as collection:
             metadata = json.load(collection.extractfile("MANIFEST.json"))["collection_info"]
             self.assertEqual(metadata["version"], VERSION)
-            self.assertEqual(metadata["documentation"], f"https://dimidiumlabs.io/hrc/doc/{VERSION}/installation.html")
-            self.assertIn(f"https://dimidiumlabs.io/hrc/doc/{VERSION}/installation.html#ansible-collection",
+            self.assertEqual(metadata["documentation"], f"https://dimidiumlabs.io/hrc/doc/{VERSION}/manual/installation.html")
+            self.assertIn(f"https://dimidiumlabs.io/hrc/doc/{VERSION}/manual/installation.html#ansible-collection",
                           collection.extractfile("README.md").read().decode())
             self.assertEqual(json.load(collection.extractfile("roles/install/vars/release.yml")), {
                 "_hrc_release_version": VERSION, "_hrc_release_source": ARTIFACT_SOURCE,

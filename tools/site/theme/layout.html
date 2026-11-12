@@ -2,78 +2,23 @@
 SPDX-FileCopyrightText: 2026 Nikolay Govorov
 SPDX-License-Identifier: BSD-3-Clause
 #}
-{%- extends "basic/layout.html" %}
-
-{% block extrahead %}
-{{ super() }}
-{% if pagename != 'search' %}
-<link rel="alternate" type="text/plain" href="{{ pathto(pagename ~ '.txt', resource=True)|e }}" />
-{% endif %}
-{% endblock %}
-
-{% block body_tag %}<body class="page">{% endblock %}
-{% block header %}{% endblock %}
-{% block relbar1 %}{% endblock %}
-{% block relbar2 %}{% endblock %}
-
-{% block content %}
-<div class="page__layout">
-  <aside class="site-sidebar" aria-label="{{ _('Sidebar') }}">
-    <p class="site-sidebar__title"><a href="{{ pathto(root_doc)|e }}">{{ project|e }}</a></p>
-
-    <div class="site-sidebar__search">
-      {% include "searchfield.html" %}
-    </div>
-
-    {% if pagename != 'search' %}
-    <p><a href="{{ pathto(pagename ~ '.txt', resource=True)|e }}">{{ _('Plain text') }}</a></p>
-    {% endif %}
-
-    <nav class="site-sidebar__navigation" aria-label="{{ _('Documentation') }}">
-      <div class="site-sidebar__tree">
-        {{ toctree(includehidden=True, maxdepth=2, titles_only=True) }}
-      </div>
-    </nav>
-
-    {% if display_toc %}
-    <nav class="site-sidebar__navigation site-sidebar__navigation--local" aria-label="{{ _('On this page') }}">
-      <p>{{ _('On this page') }}</p>
-      <div class="site-sidebar__tree">{{ toc }}</div>
-    </nav>
-    {% endif %}
-  </aside>
-
-  <div class="page__content">
-    <nav aria-label="{{ _('Breadcrumbs') }}" class="breadcrumbs">
-      <ol class="breadcrumbs__list">
-        {% if pagename != root_doc %}
-        <li class="breadcrumbs__item"><a href="{{ pathto(root_doc)|e }}">{{ _('Home') }}</a></li>
-        {% endif %}
-
-        {% for parent in parents %}
-        {% if parent.link != pathto(root_doc) %}
-        <li class="breadcrumbs__item"><a href="{{ parent.link|e }}">{{ parent.title }}</a></li>
-        {% endif %}
-        {% endfor %}
-        <li class="breadcrumbs__item breadcrumbs__item--current" aria-current="page">{{ title }}</li>
-      </ol>
-    </nav>
-
-    <main class="body document-content" id="main-content">
-      {% block body %}{% endblock %}
-    </main>
-  </div>
-</div>
-{% endblock %}
-
-{% block footer %}
-<footer class="page__footer">
-  {% if release %}
-  <p class="page__build">
-    {{ _('Version') }} <code>{{ release|e }}</code>{% if build_commit %}
-    · {{ _('Commit') }} <code>{{ build_commit|e }}</code>{% endif %}
-  </p>
+<!DOCTYPE html>
+<html lang="{{ language|e }}">
+<head>
+  <meta charset="utf-8" />
+  {{ metatags }}
+  <title>{{ title|striptags|e }} · {{ project|e }}</title>
+  <link rel="icon" href="{{ pathto('favicon.ico', resource=True)|e }}" sizes="32x32" />
+  <link rel="icon" href="{{ pathto('favicon.svg', resource=True)|e }}" type="image/svg+xml" sizes="any" />
+  <link rel="apple-touch-icon" href="{{ pathto('apple-touch-icon.png', resource=True)|e }}" sizes="180x180" />
+  <link rel="manifest" href="{{ pathto('manifest.webmanifest', resource=True)|e }}" />
+  <link rel="stylesheet" href="{{ pathto('_static/' ~ site_css, resource=True)|e }}" />
+  <link rel="alternate" type="text/plain" href="{{ pathto(pagename ~ '.txt', resource=True)|e }}" />
+  {% if has_tabs %}
+  <script src="{{ pathto('_static/' ~ site_js, resource=True)|e }}" defer></script>
   {% endif %}
-  {{ super() }}
-</footer>
-{% endblock %}
+</head>
+<body class="page">
+  {% include "components/page/page.html" %}
+</body>
+</html>

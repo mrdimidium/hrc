@@ -11,7 +11,7 @@ repository: https://github.com/mrdimidium/hrc
 
 readme: README.md
 description: Install and remove Hosted Runner Controller
-documentation: https://dimidiumlabs.io/hrc/doc/@VERSION@/installation.html
+documentation: https://dimidiumlabs.io/hrc/doc/@VERSION@/manual/installation.html
 
 dependencies:
   ansible.windows: '>=3.0.0'

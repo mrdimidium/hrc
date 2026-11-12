@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
 # SPDX-License-Identifier: BSD-3-Clause
 
-# Minimal local theme inheriting Sphinx's basic layout.
+# Standalone documentation theme.
 
 [theme]
-inherit = "basic"
+inherit = "none"
 pygments_style = { default = "default" }
 sidebars = []

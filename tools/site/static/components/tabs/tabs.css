@@ -1,0 +1,68 @@
+/*!
+ * SPDX-FileCopyrightText: 2026 Nikolay Govorov
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+@layer components {
+  .tabs {
+    margin-block: 1rem;
+    padding-inline-start: 0.75rem;
+    border-inline-start: 1px solid var(--color-border);
+  }
+
+  .tabs__list {
+    display: none;
+  }
+
+  .tabs[data-enhanced] > .tabs__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .tabs__tab {
+    padding: 0.375rem 0.625rem;
+    border: 0;
+    border-radius: 0.25rem;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    cursor: pointer;
+  }
+
+  .tabs__tab[aria-selected="true"] {
+    background-color: var(--color-navigation-current);
+  }
+
+  .tabs__tab:hover {
+    text-decoration: underline;
+  }
+
+  .tabs__tab:focus-visible,
+  .tabs__panel:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 0.2rem;
+  }
+
+  /* These selectors never hide the server-rendered fallback before JS succeeds. */
+  .tabs[data-enhanced] > .tabs__panel[hidden],
+  .tabs[data-enhanced] > .tabs__panel > .tabs__title {
+    display: none;
+  }
+
+  @media print {
+    .tabs[data-enhanced] > .tabs__list {
+      display: none;
+    }
+
+    .tabs[data-enhanced] > .tabs__panel[hidden],
+    .tabs[data-enhanced] > .tabs__panel > .tabs__title {
+      display: block;
+    }
+  }
+}

@@ -18,8 +18,17 @@ import tempfile
 def stage(workspace, destination):
     docs = workspace / "docs"
     destination.mkdir(parents=True, exist_ok=True)
-    for source in docs.glob("*.rst"):
-        target = destination / source.relative_to(docs)
+    # Autobuild reuses this directory; discard sources removed or renamed in
+    # the workspace instead of leaving orphan pages in subsequent builds.
+    for staged in destination.rglob("*.rst"):
+        relative = staged.relative_to(destination)
+        if relative.parts[0] != "LICENSES" and not (docs / relative).is_file():
+            staged.unlink()
+    for source in docs.rglob("*.rst"):
+        relative = source.relative_to(docs)
+        if relative.parts[0] == "draft":
+            continue
+        target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
     licenses = destination.parent / "LICENSES"
@@ -64,13 +73,7 @@ def parse_args(argv=None):
     hooks.add_argument("--stage", nargs=2, type=Path, metavar=("WORKSPACE", "DESTINATION"))
     hooks.add_argument("--text", nargs=3, type=Path, metavar=("WORKSPACE", "SOURCE", "OUTPUT"))
     hooks.add_argument("--archive", nargs=2, type=Path, metavar=("DIRECTORY", "OUTPUT"))
-    parser.add_argument("--version-file", type=Path)
-    parser.add_argument("--status-file", type=Path)
     args, forwarded = parser.parse_known_args(argv)
-    if args.archive and args.version_file is None:
-        parser.error("--archive requires --version-file")
-    if (args.version_file or args.status_file) and not args.archive:
-        parser.error("--version-file and --status-file require --archive")
     if (args.stage or args.text or args.archive) and forwarded:
         parser.error(f"unrecognized arguments: {' '.join(forwarded)}")
     return args, forwarded
@@ -84,13 +87,7 @@ def main():
 
     if args.archive:
         directory, output = args.archive
-        version = args.version_file.read_text().strip()
-        if args.status_file:
-            for line in args.status_file.read_text().splitlines():
-                key, _, value = line.partition(" ")
-                if key == "STABLE_HRC_VERSION":
-                    version = value.strip()
-                    break
+        version = os.environ["HRC_DOCS_VERSION"]
         if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+[-+A-Za-z0-9.]*", version):
             raise ValueError(f"Invalid documentation version: {version}")
         output.mkdir(parents=True, exist_ok=True)
@@ -109,7 +106,13 @@ def main():
         ]))
 
     from sphinx_autobuild.__main__ import main as autobuild
+    from python.runfiles import runfiles
 
+    files = runfiles.Create()
+    os.environ["HRC_ESBUILD"] = files.Rlocation(os.environ["HRC_ESBUILD_RUNFILE"])
+    os.environ["HRC_DOCS_VERSION"] = Path(
+        files.Rlocation(os.environ["HRC_DOCS_VERSION_RUNFILE"])
+    ).read_text().strip()
     workspace = Path(os.environ["BUILD_WORKSPACE_DIRECTORY"])
     # Autobuild runs Sphinx in a child interpreter: preserve Bazel's imports.
     os.environ["PYTHONPATH"] = os.pathsep.join(sys.path)

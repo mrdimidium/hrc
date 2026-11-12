@@ -46,12 +46,68 @@ py_console_script_binary(
     visibility = ["//:__pkg__"],
 )
 
+[
+    config_setting(
+        name = "esbuild_" + platform,
+        constraint_values = [
+            "@platforms//os:" + os,
+            "@platforms//cpu:" + cpu,
+        ],
+    )
+    for platform, os, cpu in [
+        ("linux_x64", "linux", "x86_64"),
+        ("linux_arm64", "linux", "aarch64"),
+        ("darwin_x64", "osx", "x86_64"),
+        ("darwin_arm64", "osx", "aarch64"),
+        ("win32_x64", "windows", "x86_64"),
+        ("win32_arm64", "windows", "aarch64"),
+    ]
+]
+
+filegroup(
+    name = "esbuild",
+    srcs = select({
+        ":esbuild_" + platform: ["@esbuild_%s//:%s" % (
+            platform,
+            "esbuild.exe" if platform.startswith("win32") else "bin/esbuild",
+        )]
+        for platform in [
+            "linux_x64",
+            "linux_arm64",
+            "darwin_x64",
+            "darwin_arm64",
+            "win32_x64",
+            "win32_arm64",
+        ]
+    }),
+)
+
+genrule(
+    name = "site_version",
+    outs = ["site/version.txt"],
+    cmd = """
+        version=$$(awk '$$1 == "STABLE_HRC_VERSION" { print $$2 }' bazel-out/stable-status.txt)
+        test -n "$$version" || { echo 'Missing STABLE_HRC_VERSION in workspace status' >&2; exit 1; }
+        printf '%s\\n' "$$version" > "$@"
+    """,
+    stamp = 1,
+)
+
 py_binary(
     name = "site_dev",
     srcs = ["site/dev.py"],
     main = "site/dev.py",
+    data = [
+        ":esbuild",
+        ":site_version",
+    ],
+    env = {
+        "HRC_DOCS_VERSION_RUNFILE": "$(rlocationpath :site_version)",
+        "HRC_ESBUILD_RUNFILE": "$(rlocationpath :esbuild)",
+    },
     deps = [
         "@python_tools//sphinx_autobuild",
+        "@rules_python//python/runfiles",
     ],
     visibility = ["//:__pkg__"],
 )
@@ -60,15 +116,42 @@ exports_files(["site/conf.py"])
 
 filegroup(
     name = "site_theme",
-    srcs = glob(["site/theme/**"]),
+    srcs = glob([
+        "site/theme/**",
+        "site/static/**",
+        "site/assets/**",
+    ]),
     visibility = ["//:__pkg__"],
+)
+
+filegroup(
+    name = "site_test_node",
+    srcs = select({
+        ":esbuild_" + platform: ["@" + repository + "//:node_bin"]
+        for platform, repository in [
+            ("linux_x64", "node24_linux_glibc_x64"),
+            ("linux_arm64", "node24_linux_glibc_arm64"),
+            ("darwin_x64", "node24_darwin_x64"),
+            ("darwin_arm64", "node24_darwin_arm64"),
+            ("win32_x64", "node24_win_x64"),
+            ("win32_arm64", "node24_win_arm64"),
+        ]
+    }),
 )
 
 py_test(
     name = "site_test",
     srcs = ["site/site_test.py"],
     main = "site/site_test.py",
-    data = ["//:docs"],
+    args = [
+        "$(rootpath :site_test_node)",
+        "$(rootpath site/static/components/tabs/tabs.test.cjs)",
+    ],
+    data = [
+        "site/static/components/tabs/tabs.test.cjs",
+        ":site_test_node",
+        "//:docs",
+    ],
     deps = ["@rules_python//python/runfiles"],
 )
 

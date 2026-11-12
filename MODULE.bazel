@@ -79,6 +79,34 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+# Native esbuild CLI: no npm installation or system Node.js required.
+# renovate: datasource=npm depName=esbuild
+ESBUILD_VERSION = "0.25.12"
+
+ESBUILD_PLATFORMS = {
+    "darwin_arm64": "2e0d011f852e45046ca5c107db54cfc56338f77aca49d227a063696d958451d7",
+    "darwin_x64": "bf56cdf7b330a8605395ee13de805c784c7346d0802c7cced8490b4bfac2291a",
+    "linux_arm64": "d5e01d210e026823d559e2b82554cdcdab6fd87c4a57b519b392ef183c1f87fd",
+    "linux_x64": "f7efc127658a108dcda9d4210b01804ee8f5d6b3acbd6d63f20aa51d3b50bd5f",
+    "win32_arm64": "01979ffafb4bb6a63d824cd57ed76bd257d1e3eed804c3e47fdfd80005dcfa66",
+    "win32_x64": "c77076b48f96323cae6257bd515e5ea96ecf38ab8f7fa34364d4fc4ae5905b74",
+}
+
+[
+    http_archive(
+        name = "esbuild_" + platform,
+        urls = ["https://registry.npmjs.org/@esbuild/%s/-/%s-%s.tgz" % (
+            platform.replace("_", "-"),
+            platform.replace("_", "-"),
+            ESBUILD_VERSION,
+        )],
+        sha256 = checksum,
+        strip_prefix = "package",
+        build_file_content = 'exports_files(["%s"])' % ("esbuild.exe" if platform.startswith("win32") else "bin/esbuild"),
+    )
+    for platform, checksum in ESBUILD_PLATFORMS.items()
+]
+
 # Private Windows service wrapper, embedded in the Ansible collection.
 http_file(
     name = "ansible_winsw",

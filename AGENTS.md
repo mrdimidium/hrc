@@ -15,8 +15,9 @@ directly.
 
 - Build: `bazel build //:hrc`, `//:runner`, or `//cmd:release`.
 - Tests:
-  `bazel test //:tests --nostamp --workspace_status_command= --test_output=errors`.
-  Include new test targets in `//:tests`.
+  `bazel test //:tests --test_output=errors`.
+  Include new test targets in `//:tests`. Documentation tests require workspace
+  status to provide `STABLE_HRC_VERSION`.
 - Starlark lint:
   `bazel build --config=lint --@aspect_rules_lint//lint:fail_on_violation=true --output_groups=rules_lint_human //:starlark_sources`.
 - Starlark format: `bazel run //tools/format:format`; check:

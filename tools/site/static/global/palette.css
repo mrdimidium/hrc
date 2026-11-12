@@ -1,0 +1,18 @@
+/*!
+ * SPDX-FileCopyrightText: 2026 Nikolay Govorov
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+@layer palette {
+  :where(:root) {
+    --color-navigation-current: #eee;
+    --color-border: #ddd;
+    --color-border-strong: #aaa;
+    --color-link: #175e91;
+    --color-link-underline: #a7bed0;
+    --color-link-visited: #6c4982;
+    --color-link-visited-underline: #c5b5d0;
+    --color-link-hover: #a03924;
+    --color-focus: #175e91;
+  }
+}

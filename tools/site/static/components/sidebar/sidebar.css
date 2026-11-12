@@ -1,0 +1,65 @@
+/*!
+ * SPDX-FileCopyrightText: 2026 Nikolay Govorov
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+@layer components {
+  .site-sidebar {
+    min-width: 0;
+    align-self: first baseline;
+    overflow-wrap: anywhere;
+  }
+
+  :is(.site-sidebar__navigation, .site-sidebar__format) a:any-link {
+    color: inherit;
+    text-decoration-line: none;
+  }
+
+  :is(.site-sidebar__navigation, .site-sidebar__format) a:hover,
+  :is(.site-sidebar__navigation, .site-sidebar__format) a:focus-visible {
+    text-decoration-line: underline;
+    text-decoration-color: currentColor;
+  }
+
+  .site-sidebar__format {
+    margin-top: 1.5rem;
+  }
+
+  /* Adapters for the Sphinx-generated navigation tree. */
+  .site-sidebar__tree .caption {
+    margin-top: 1.5rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+  }
+
+  .site-sidebar__tree ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  .site-sidebar__tree li {
+    padding: 0;
+  }
+
+  .site-sidebar__tree li + li {
+    margin-top: 0.625rem;
+  }
+
+  .site-sidebar__overview--current > a:any-link,
+  .site-sidebar__tree .current > a:any-link {
+    display: block;
+    margin: -0.25rem -0.5rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    background-color: var(--color-navigation-current);
+    color: inherit;
+    font-weight: 400;
+  }
+
+  @media (max-width: 48rem) {
+    .site-sidebar {
+      border-bottom: 1px solid var(--color-border);
+      padding-bottom: 1rem;
+    }
+  }
+}
