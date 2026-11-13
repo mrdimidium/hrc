@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Nikolay Govorov
 # SPDX-License-Identifier: BSD-3-Clause
 
-boto3==1.43.125
+boto3==1.43.126
 reuse[charset-normalizer]==6.3.0
 sphinx==9.2.0
 sphinx-autobuild==2025.8.25
