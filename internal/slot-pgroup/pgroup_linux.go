@@ -3,10 +3,10 @@
 
 //go:build linux
 
-package process
+package slotpgroup
 
 type pgroupPlatform struct{}
 
-func (g *PGroup) configure() error { return nil }
+func (g *pgroup) configure() error { return nil }
 
-func (g *PGroup) release() error { return nil }
+func (g *pgroup) release() error { return nil }

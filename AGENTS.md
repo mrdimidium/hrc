@@ -28,21 +28,6 @@ directly.
   runner and release builds require the target OS; cross-architecture builds are
   supported. Run tests on a compatible host.
 
-## Modules
-
-- `cmd/`: Controller, config, GitHub auth, scale sets, ephemeral v2 JIT
-  registration, job directories, and Listener/Worker orchestration.
-- `internal/listener/`: A Go reimplementation of the Listener module from the
-  official .NET-based GitHub Runner. It provides an API for registering a
-  runner, fetching jobs, handling cancellations, etc. It is clean and does not
-  manage workers itself. Only a portion of the API for modern GitHub and
-  ephemeral workers.
-- `internal/worker/`: a thin wrapper around the Worker from the official .NET
-  implementation of the GitHub runner. A worker accepts a job description,
-  performs exactly one task, and then terminates. This package also contains
-  the build rules, patches, and runtime tests for our synchronizable fork of
-  the upstream Worker, repackaged for our needs.
-
 ## Issue and PR Guidelines
 
 - Never commit on your own.

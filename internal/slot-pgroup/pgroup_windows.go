@@ -3,7 +3,7 @@
 
 //go:build windows
 
-package process
+package slotpgroup
 
 import (
 	"errors"
@@ -17,7 +17,7 @@ type pgroupPlatform struct {
 	job windows.Handle
 }
 
-func (g *PGroup) configure() error {
+func (g *pgroup) configure() error {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return err
@@ -42,7 +42,7 @@ type jobAccounting struct {
 	ActiveProcesses, TotalTerminatedProcesses          uint32
 }
 
-func (g *PGroup) release() error {
+func (g *pgroup) release() error {
 	// Normal cleanup has already scanned RUNNER_TRACKING_GROUP, just as on
 	// Unix. The job is only a final safety net, including KILL_ON_JOB_CLOSE
 	// if the controller crashes before it can scan environments.

@@ -10,12 +10,12 @@ import (
 	"log/slog"
 	"math"
 	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 
-	"dimidiumlabs.io/hrc/internal/process"
-	"dimidiumlabs.io/hrc/internal/runtime"
+	"dimidiumlabs.io/hrc/internal/provider"
+	"dimidiumlabs.io/hrc/internal/slot"
+	"dimidiumlabs.io/hrc/internal/space"
 )
 
 // slotCount returns how many runners fit on the host, each holding quota after
@@ -41,152 +41,157 @@ func slotCount(host, reserve, quota Resources) (int, error) {
 	return total, nil
 }
 
-// slot owns one workspace and its process group. Both expire together, even
-// when the slot is reused across jobs. Scheduler membership and busy are
-// protected by the scheduler's mutex.
-type slot struct {
-	dir       string
-	group     *process.PGroup
-	owner     string
-	reusable  bool
-	busy      bool
-	closeOnce sync.Once
-	closeErr  error
+// allocation contains scheduling metadata; its Slot owns the actual resources.
+type allocation struct {
+	slot.Slot
+	owner    string
+	reusable bool
+	busy     bool
 }
 
-func newSlot(dir string) (*slot, error) {
-	group, err := process.NewPGroup()
-	if err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, errors.Join(err, group.Close())
-	}
-	return &slot{dir: dir, group: group}, nil
-}
-
-func (s *slot) Close() error {
-	s.closeOnce.Do(func() {
-		// Stop processes before deleting files they may still be using.
-		s.closeErr = s.group.Close()
-		s.closeErr = errors.Join(s.closeErr, os.RemoveAll(s.dir))
-	})
-	return s.closeErr
-}
-
-// scheduler owns the host's capacity and all workspaces and process groups. A runner
-// holds one slot for its Listener's entire lifetime. Reusable slots return to
-// their GitHub group's idle list, warmest first; other slots expire on release.
-// The limit applies to busy slots, as idle build servers may serve later jobs.
 type scheduler struct {
 	mu       sync.Mutex
-	root     string
+	space    space.Space
 	total    int
 	used     int
 	waiting  int
-	all      map[*slot]struct{}
-	free     map[string][]*slot
+	all      map[*allocation]struct{}
+	free     map[string][]*allocation
 	next     map[string]int
-	released chan struct{} // Closed and replaced on release or scheduler shutdown.
+	released chan struct{}
 	closed   bool
 	closeErr error
 }
 
-// newHostScheduler sizes the scheduler from the host resources and configured
-// reserve and per-job quota. Without a quota it need not inspect the host.
-func newHostScheduler(root string, reserve, quota Resources) (*scheduler, error) {
+func newSpaceScheduler(environment space.Space, reserve, quota Resources) (*scheduler, error) {
 	total := math.MaxInt32
 	if quota != (Resources{}) {
-		cpu, err := runtime.CPUCapacity()
+		capacity, err := environment.Capacity()
 		if err != nil {
-			return nil, fmt.Errorf("detect CPU capacity: %w", err)
+			return nil, err
 		}
-		memory, err := runtime.MemoryCapacity()
-		if err != nil {
-			return nil, fmt.Errorf("detect memory capacity: %w", err)
-		}
-		host := Resources{CPU: cpu, Memory: ByteSize(memory)}
+		host := Resources{CPU: capacity.CPU, Memory: ByteSize(capacity.Memory)}
 		total, err = slotCount(host, reserve, quota)
 		if err != nil {
 			return nil, fmt.Errorf("invalid quota: %w", err)
 		}
-		slog.Info("Host capacity", "cpu", host.CPU, "memory", host.Memory, "runners", total)
+		slog.Info("Space capacity", "cpu", host.CPU, "memory", host.Memory, "runners", total)
 	}
-	return newScheduler(root, total), nil
+	return newScheduler(environment, total), nil
 }
 
-func newScheduler(root string, total int) *scheduler {
+func newScheduler(environment space.Space, total int) *scheduler {
 	return &scheduler{
-		root: root, total: total,
-		all: make(map[*slot]struct{}), free: make(map[string][]*slot),
+		space: environment, total: total,
+		all: make(map[*allocation]struct{}), free: make(map[string][]*allocation),
 		next: make(map[string]int), released: make(chan struct{}),
 	}
 }
 
-// queue counts a runner as waiting before its goroutine starts, so the slot
-// it will take is not advertised meanwhile. Each queue requires one acquire.
-func (p *scheduler) queue() {
+// Reserve accounts for acquisition demand without preparing an execution slot.
+func (p *scheduler) Reserve() provider.Reservation {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	r := &reservation{pool: p}
+	if p.closed {
+		r.closed = true
+		return r
+	}
+	r.pending = true
 	p.waiting++
+	p.notify()
+	return r
 }
 
-// acquire waits for capacity and returns a slot belonging to the GitHub group.
-// It creates the workspace and PGroup together if no reusable slot is idle.
-func (p *scheduler) acquire(ctx context.Context, group *Group) (s *slot, err error) {
+type reservation struct {
+	pool     *scheduler
+	pending  bool
+	acquired bool
+	closed   bool
+}
+
+func (r *reservation) Wait(ctx context.Context) error {
+	p := r.pool
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	defer func() { p.waiting-- }()
 	for {
-		if p.closed {
-			return nil, os.ErrClosed
+		if p.closed || r.closed {
+			return os.ErrClosed
 		}
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
+		}
+		if r.acquired {
+			return errors.New("reservation is already acquired")
 		}
 		if p.used < p.total {
-			break
+			p.waiting--
+			p.used++
+			r.pending, r.acquired = false, true
+			return nil
 		}
-		released := p.released
+		changed := p.released
 		p.mu.Unlock()
 		select {
 		case <-ctx.Done():
-		case <-released:
+		case <-changed:
 		}
 		p.mu.Lock()
 	}
+}
+
+func (r *reservation) Close() error {
+	p := r.pool
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !r.closed {
+		r.closed = true
+		if r.pending {
+			p.waiting--
+		}
+		if r.acquired {
+			p.used--
+		}
+		p.notify()
+	}
+	return nil
+}
+
+// acquire materializes a slot for an already acquired Job. The queue holds a
+// capacity reservation until this slot is released and the Job is closed.
+func (p *scheduler) acquire(ctx context.Context, group *Group) (*allocation, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return nil, os.ErrClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var s *allocation
 	if idle := p.free[group.Name]; group.ReuseDirs && len(idle) > 0 {
 		s = idle[len(idle)-1]
 		p.free[group.Name] = idle[:len(idle)-1]
 	} else {
-		var dir string
+		name := ""
 		if group.ReuseDirs {
-			dir = filepath.Join(p.root, group.Name+"-"+strconv.Itoa(p.next[group.Name]+1))
-		} else {
-			if err := os.MkdirAll(p.root, 0o700); err != nil {
-				return nil, err
-			}
-			dir, err = os.MkdirTemp(p.root, "runner-")
-			if err != nil {
-				return nil, err
-			}
+			name = group.Name + "-" + strconv.Itoa(p.next[group.Name]+1)
 		}
-		s, err = newSlot(dir)
+		instance, err := p.space.CreateSlot(name)
 		if err != nil {
-			return nil, errors.Join(err, os.RemoveAll(dir))
+			return nil, err
 		}
-		s.owner, s.reusable = group.Name, group.ReuseDirs
+		s = &allocation{Slot: instance, owner: group.Name, reusable: group.ReuseDirs}
 		p.all[s] = struct{}{}
 		if group.ReuseDirs {
 			p.next[group.Name]++
 		}
 	}
 	s.busy = true
-	p.used++
 	return s, nil
 }
 
-func (p *scheduler) release(s *slot) error {
+func (p *scheduler) release(s *allocation) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
@@ -203,8 +208,6 @@ func (p *scheduler) release(s *slot) error {
 		delete(p.all, s)
 	}
 	s.busy = false
-	p.used--
-	p.notify()
 	return err
 }
 
@@ -213,9 +216,7 @@ func (p *scheduler) notify() {
 	p.released = make(chan struct{})
 }
 
-// state returns the slots not held or awaited by any runner, and a channel
-// closed on release or shutdown, so a caller can refresh what it advertised.
-func (p *scheduler) state() (free int, released <-chan struct{}) {
+func (p *scheduler) State() (int, <-chan struct{}) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
@@ -224,8 +225,6 @@ func (p *scheduler) state() (free int, released <-chan struct{}) {
 	return max(p.total-p.used-p.waiting, 0), p.released
 }
 
-// Close expires all slots, including idle reusable slots. The controller calls
-// it after all group controllers and their runners have stopped.
 func (p *scheduler) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -235,7 +234,6 @@ func (p *scheduler) Close() error {
 			p.closeErr = errors.Join(p.closeErr, s.Close())
 		}
 		p.all, p.free = nil, nil
-		p.used = 0
 		p.notify()
 	}
 	return p.closeErr

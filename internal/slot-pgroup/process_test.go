@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Nikolay Govorov
 // SPDX-License-Identifier: BSD-3-Clause
 
-package process
+package slotpgroup
 
 import (
 	"bytes"
@@ -18,6 +18,7 @@ import (
 	"time"
 
 	platformruntime "dimidiumlabs.io/hrc/internal/runtime"
+	"dimidiumlabs.io/hrc/internal/slot"
 )
 
 const childArg = "hrc-process-child"
@@ -75,9 +76,9 @@ func testChild(mode string, names []string) int {
 }
 
 // newTestPGroup creates a group closed when the test ends.
-func newTestPGroup(t *testing.T) *PGroup {
+func newTestPGroup(t *testing.T) *pgroup {
 	t.Helper()
-	g, err := NewPGroup()
+	g, err := newPGroup()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,12 +92,12 @@ func newTestPGroup(t *testing.T) *PGroup {
 
 // startChild starts this test binary in mode, returning its go-ahead and report
 // files. The process belongs to a group closed when the test ends.
-func startChild(t *testing.T, mode string, env ...string) (*Process, *os.File, *os.File, *bytes.Buffer) {
+func startChild(t *testing.T, mode string, env ...string) (*process, *os.File, *os.File, *bytes.Buffer) {
 	t.Helper()
 	return startGroupChild(t, newTestPGroup(t), mode, env...)
 }
 
-func startGroupChild(t *testing.T, g *PGroup, mode string, env ...string) (*Process, *os.File, *os.File, *bytes.Buffer) {
+func startGroupChild(t *testing.T, g *pgroup, mode string, env ...string) (*process, *os.File, *os.File, *bytes.Buffer) {
 	t.Helper()
 	self, err := os.Executable()
 	if err != nil {
@@ -111,7 +112,7 @@ func startGroupChild(t *testing.T, g *PGroup, mode string, env ...string) (*Proc
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	p, err := g.Start(Config{
+	p, err := g.Start(slot.Command{
 		Path: self, Dir: t.TempDir(), Args: []string{childArg, mode},
 		Env: append(os.Environ(), env...), Stdout: &output, Stderr: &output,
 		Files: []*os.File{startRead, reportWrite},
@@ -255,25 +256,25 @@ func TestFiles(t *testing.T) {
 	if err != nil || string(data) != "ok" {
 		t.Fatalf("report = %q, %v", data, err)
 	}
-	if state, err := p.Wait(); err != nil || state.ExitCode() != 0 {
+	if state, err := p.Wait(); err != nil || state != 0 {
 		t.Fatalf("Wait = %v, %v: %s", state, err, output)
 	}
 }
 
 // Descendants outlive an individual process, even after Kill or Close. Only
-// closing their PGroup terminates them, whether or not they changed session.
+// closing their pgroup terminates them, whether or not they changed session.
 func TestDescendants(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
-		stop     func(*Process) error
+		stop     func(*process) error
 		detached bool
 	}{
 		{"exit", nil, false},
-		{"kill", (*Process).Kill, false},
-		{"close", (*Process).Close, false},
+		{"kill", (*process).Kill, false},
+		{"close", (*process).Close, false},
 		{"exit-detached", nil, true},
-		{"kill-detached", (*Process).Kill, true},
-		{"close-detached", (*Process).Close, true},
+		{"kill-detached", (*process).Kill, true},
+		{"close-detached", (*process).Close, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			listener := listenDescendant(t)
@@ -299,7 +300,7 @@ func TestDescendants(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tt.stop == nil && state.ExitCode() != 17 {
+			if tt.stop == nil && state != 17 {
 				t.Fatalf("exit = %v: %s", state, output)
 			}
 			if err := p.Close(); err != nil {
@@ -325,7 +326,7 @@ func TestInterruptStaysInTree(t *testing.T) {
 	if _, err := start.Write([]byte{1}); err != nil {
 		t.Fatal(err)
 	}
-	if state, err := p.Wait(); err != nil || state.ExitCode() != 0 {
+	if state, err := p.Wait(); err != nil || state != 0 {
 		t.Fatalf("interrupt = %v, %v: %s", state, err, output)
 	}
 	select {

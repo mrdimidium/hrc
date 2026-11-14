@@ -3,7 +3,7 @@
 
 //go:build windows
 
-package process
+package slotpgroup
 
 import (
 	"errors"
@@ -18,7 +18,7 @@ import (
 
 // configure passes Files as inherited handles named by their values, gives the
 // child a console of its own.
-func (p *Process) configure(files []*os.File) error {
+func (p *process) configure(files []*os.File) error {
 	handles := make([]syscall.Handle, len(files))
 	for i, f := range files {
 		handle := windows.Handle(f.Fd())
@@ -38,9 +38,9 @@ func (p *Process) configure(files []*os.File) error {
 	return nil
 }
 
-// attach puts the child into the PGroup's crash-cleanup job. Runner.Worker is
+// attach puts the child into the pgroup's crash-cleanup job. Runner.Worker is
 // still waiting for its initial NewJobRequest, so its job steps inherit it.
-func (p *Process) attach() error {
+func (p *process) attach() error {
 	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(p.cmd.Process.Pid))
 	if err != nil {
 		return err

@@ -18,11 +18,11 @@ go_library(
         ["*.go"],
         exclude = ["*_test.go"],
     ),
-    importpath = "dimidiumlabs.io/hrc/internal/worker",
-    visibility = ["//visibility:public"],
+    importpath = "dimidiumlabs.io/hrc/internal/provider-github/worker",
+    visibility = ["//internal/provider-github:__subpackages__"],  # keep
     deps = [
-        "//internal/process",
         "//internal/runtime",
+        "//internal/slot",
     ],
 )
 
@@ -31,7 +31,7 @@ go_test(
     size = "small",
     srcs = glob(["*_test.go"]),
     embed = [":worker"],
-    deps = ["//internal/process"],
+    deps = ["//internal/slot-pgroup"],
 )
 
 filegroup(

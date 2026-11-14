@@ -251,7 +251,7 @@
       // Prepare the draft immediately; compatibility is reviewed by hand.
       minimumReleaseAge: "0 days",
       prBodyNotes: [
-        "Manual review required: compare upstream changes with `internal/listener`, verify the semantics of `internal/worker/patch/`, and check Node runtime requirements before marking this draft ready.",
+        "Manual review required: compare upstream changes with `internal/provider-github/listener`, verify the semantics of `internal/provider-github/worker/patch/`, and check Node runtime requirements before marking this draft ready.",
       ],
       skipArtifactsUpdate: true,
       postUpgradeTasks: {

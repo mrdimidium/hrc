@@ -3,7 +3,7 @@
 
 //go:build !windows
 
-package process
+package slotpgroup
 
 import (
 	"os"
@@ -15,7 +15,7 @@ import (
 
 // configure passes Files as descriptors 3 and up, and starts the child in a
 // process group of its own.
-func (p *Process) configure(files []*os.File) error {
+func (p *process) configure(files []*os.File) error {
 	p.cmd.ExtraFiles = files
 	for i := range files {
 		p.cmd.Args = append(p.cmd.Args, strconv.Itoa(3+i))
@@ -24,7 +24,7 @@ func (p *Process) configure(files []*os.File) error {
 	return nil
 }
 
-func (p *Process) attach() error { return nil }
+func (p *process) attach() error { return nil }
 
 func findTrackedProcess(pid int) (*os.Process, error) {
 	return os.FindProcess(pid)

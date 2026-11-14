@@ -22,8 +22,8 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"dimidiumlabs.io/hrc/internal/process"
 	platformruntime "dimidiumlabs.io/hrc/internal/runtime"
+	"dimidiumlabs.io/hrc/internal/slot"
 )
 
 // Result uses the upstream TaskResult values. Unknown means the process never
@@ -98,7 +98,7 @@ type Worker struct {
 	closed         bool
 
 	startCancel context.CancelFunc
-	process     *process.Process
+	process     slot.Process
 	done        chan struct{}
 	result      Result
 	err         error
@@ -114,7 +114,7 @@ type Worker struct {
 }
 
 // New validates the local configuration and copies its values. It creates no
-// files or processes. PGroup is required only for StartJob, allowing New to
+// files or processes. Slot is required only for StartJob, allowing New to
 // validate an installation before any slot exists. Runtime settings are passed
 // in RUNNER_CONFIG by StartJob.
 func New(config Config) (*Worker, error) {
@@ -145,8 +145,8 @@ func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage, diagDir 
 	if body := bytes.TrimSpace(payload); len(body) == 0 || body[0] != '{' || !json.Valid(body) {
 		return errors.New("Worker job must be a JSON object")
 	}
-	if w.config.PGroup == nil {
-		return errors.New("Worker process group is required")
+	if w.config.Slot == nil {
+		return errors.New("Worker slot is required")
 	}
 	w.mu.Lock()
 	if w.closed {
@@ -214,16 +214,13 @@ func (w *Worker) StartJob(ctx context.Context, payload json.RawMessage, diagDir 
 	w.running = true
 	w.mu.Unlock()
 	go func() {
-		state, waitErr := w.process.Wait()
+		code, waitErr := w.process.Wait()
 		w.waitErr = waitErr
 		result, exitErr := Unknown, waitErr
-		if state != nil {
-			code := state.ExitCode()
-			if code >= 100 && code <= 105 {
-				result = Result(code - 100)
-			} else if exitErr == nil {
-				exitErr = &ExitError{Code: code}
-			}
+		if code >= 100 && code <= 105 {
+			result = Result(code - 100)
+		} else if exitErr == nil {
+			exitErr = &ExitError{Code: code}
 		}
 		w.finish(result, exitErr)
 	}()
@@ -242,7 +239,7 @@ func (w *Worker) startProcess(env []string) error {
 	}
 	w.pipes = append(w.pipes, backRead, backWrite)
 	w.input = write
-	w.process, err = w.config.PGroup.Start(process.Config{
+	w.process, err = w.config.Slot.Start(slot.Command{
 		Path: w.config.Path, Dir: w.config.WorkDir, Args: []string{"spawnclient"},
 		Env: env, Stdout: w.config.Stdout, Stderr: w.config.Stderr,
 		Files: []*os.File{read, backWrite},
@@ -319,7 +316,7 @@ func (w *Worker) kill() error {
 
 // Close forcibly terminates a still-running Worker, interrupts startup and IPC
 // and waits for reaping. It is safe to call repeatedly and concurrently.
-// Descendants belong to the slot's PGroup and may outlive this Worker.
+// Descendants belong to the slot and may outlive this Worker.
 // Configuration files, workspaces, diagnostics and the installation belong to
 // the caller.
 func (w *Worker) Close() error {
@@ -344,7 +341,7 @@ func (w *Worker) Close() error {
 
 func (w *Worker) finish(result Result, err error) error {
 	// Release this Worker's resources before publishing Done. Descendants are
-	// owned by the slot's PGroup, which remains available for later jobs.
+	// owned by the slot, which remains available for later jobs.
 	var processErr error
 	if w.process != nil {
 		processErr = w.process.Close()

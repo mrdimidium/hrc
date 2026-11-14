@@ -14,14 +14,14 @@ import (
 	"slices"
 	"strings"
 
-	"dimidiumlabs.io/hrc/internal/process"
+	"dimidiumlabs.io/hrc/internal/slot"
 )
 
 // Config describes the local runtime, regardless of how the runner is registered.
 type Config struct {
-	// PGroup owns the slot's processes. It is required to start a job and must
-	// outlive the Worker. Closing a Worker does not close this shared group.
-	PGroup *process.PGroup
+	// Slot owns the workspace and processes across Worker lifetimes.
+	// It is required to start a job; closing a Worker does not close its slot.
+	Slot slot.Slot
 
 	// Path selects the hrc-worker executable. A bare name is resolved through PATH.
 	// Dir contains shared scripts/ and externals/ resources and an optional .env.
@@ -100,6 +100,9 @@ func (c *Config) validate() error {
 	}
 	if c.WorkDir == "" {
 		c.WorkDir = "."
+		if c.Slot != nil {
+			c.WorkDir = c.Slot.Dir()
+		}
 	}
 	c.WorkDir, err = filepath.Abs(c.WorkDir)
 	if err != nil {

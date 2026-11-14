@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Nikolay Govorov
 // SPDX-License-Identifier: BSD-3-Clause
 
-package process
+package slotpgroup
 
 import (
 	"crypto/rand"
@@ -19,15 +19,15 @@ import (
 
 const trackingGroupEnv = "RUNNER_TRACKING_GROUP"
 
-// PGroup owns processes across multiple child lifetimes, such as the build
+// pgroup owns processes across multiple child lifetimes, such as the build
 // servers shared by successive jobs in one runner slot. On every platform,
 // Close finds processes by their inherited RUNNER_TRACKING_GROUP, even after
 // changing process group or reparenting. This is best effort: processes can
 // discard the environment and process enumeration races with forks. Windows
 // also keeps a shared job object as a crash-cleanup safety net.
-// Start and Close are safe for concurrent use. Use NewPGroup to create a group;
-// a PGroup must not be copied.
-type PGroup struct {
+// Start and Close are safe for concurrent use. Use newPGroup to create a group;
+// a pgroup must not be copied.
+type pgroup struct {
 	mu       sync.Mutex
 	id       string
 	closed   bool
@@ -35,9 +35,9 @@ type PGroup struct {
 	platform pgroupPlatform
 }
 
-// NewPGroup creates an empty group with a fresh tracking identity.
-func NewPGroup() (*PGroup, error) {
-	g := &PGroup{id: rand.Text()}
+// newPGroup creates an empty group with a fresh tracking identity.
+func newPGroup() (*pgroup, error) {
+	g := &pgroup{id: rand.Text()}
 	if err := g.configure(); err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func NewPGroup() (*PGroup, error) {
 
 // environment overrides inherited or caller-supplied tracking identities.
 // An explicit Env retains exec.Cmd's semantics: nil inherits, empty does not.
-func (g *PGroup) environment(env []string) []string {
+func (g *pgroup) environment(env []string) []string {
 	if env == nil {
 		env = os.Environ()
 	}
@@ -65,11 +65,11 @@ func (g *PGroup) environment(env []string) []string {
 }
 
 // Close prevents new starts, terminates remaining members and frees the group.
-// It is idempotent. Callers must still Wait and Close their Process objects.
+// It is idempotent. Callers must still Wait and Close their process objects.
 // On Unix this requires a live owner: SIGKILL or a controller crash cannot run
 // environment-based cleanup. On Windows the last job handle closing also kills
 // the group's processes.
-func (g *PGroup) Close() error {
+func (g *pgroup) Close() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.id == "" {
@@ -82,7 +82,7 @@ func (g *PGroup) Close() error {
 	return g.closeErr
 }
 
-func (g *PGroup) terminate() error {
+func (g *pgroup) terminate() error {
 	err := g.killTracked()
 	return errors.Join(err, g.release())
 }
@@ -107,7 +107,7 @@ func trackedProcesses(id string) ([]int, error) {
 	return tracked, nil
 }
 
-func (g *PGroup) killTracked() error {
+func (g *pgroup) killTracked() error {
 	// Rescan after killing: a member may have forked after the snapshot. Bound
 	// cleanup so an unkillable process cannot block controller shutdown forever.
 	deadline := time.Now().Add(5 * time.Second)

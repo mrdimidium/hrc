@@ -1,46 +1,30 @@
 // SPDX-FileCopyrightText: 2026 Nikolay Govorov
 // SPDX-License-Identifier: BSD-3-Clause
 
-// Package process runs children in a PGroup that owns their descendants across
-// child lifetimes. Each child also has an isolated process group on Unix or
-// console on Windows, keeping step cancellation away from other children.
-package process
+package slotpgroup
 
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"time"
+
+	"dimidiumlabs.io/hrc/internal/slot"
 )
 
-type Config struct {
-	Path string
-	Dir  string
-	Env  []string
-	Args []string // The names of Files follow them.
-
-	Stdout io.Writer
-	Stderr io.Writer
-
-	// Files are inherited by the child, which finds them by the names appended
-	// to Args. Create them with internal/runtime.Pipe.
-	Files []*os.File
-}
-
-// Process is one child in a PGroup. Its descendants belong to the group,
+// process is one child in a pgroup. Its descendants belong to the group,
 // independently of this child's lifetime.
-type Process struct {
+type process struct {
 	cmd    *exec.Cmd
-	group  *PGroup
+	group  *pgroup
 	waited bool
 }
 
 // Start starts a child in the group. If the child cannot join its tree, it is
 // killed and reaped before Start returns. A closed or nil group cannot start
 // children.
-func (g *PGroup) Start(config Config) (*Process, error) {
+func (g *pgroup) Start(config slot.Command) (*process, error) {
 	if g == nil {
 		return nil, errors.New("process group is required")
 	}
@@ -52,7 +36,7 @@ func (g *PGroup) Start(config Config) (*Process, error) {
 	if g.id == "" {
 		return nil, errors.New("uninitialized process group")
 	}
-	p := &Process{group: g}
+	p := &process{group: g}
 	p.cmd = exec.Command(config.Path, config.Args...)
 	p.cmd.Dir, p.cmd.Env = config.Dir, g.environment(config.Env)
 	p.cmd.Stdout, p.cmd.Stderr = config.Stdout, config.Stderr
@@ -74,19 +58,22 @@ func (g *PGroup) Start(config Config) (*Process, error) {
 }
 
 // Wait waits for the child, once. An exit status is not an error: it is the
-// caller's to interpret from the returned state.
-func (p *Process) Wait() (*os.ProcessState, error) {
+// caller's to interpret from the returned exit code.
+func (p *process) Wait() (int, error) {
 	err := p.cmd.Wait()
 	p.waited = true
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
 		err = nil
 	}
-	return p.cmd.ProcessState, err
+	if p.cmd.ProcessState == nil {
+		return -1, err
+	}
+	return p.cmd.ProcessState.ExitCode(), err
 }
 
-// Kill terminates only this child. Its descendants remain in the PGroup.
-func (p *Process) Kill() error {
+// Kill terminates only this child. Its descendants remain in the pgroup.
+func (p *process) Kill() error {
 	err := p.cmd.Process.Kill()
 	if errors.Is(err, os.ErrProcessDone) {
 		return nil
@@ -95,8 +82,8 @@ func (p *Process) Kill() error {
 }
 
 // Close terminates a child that has not been waited for. It does not close the
-// PGroup or kill descendants. The caller must still Wait to reap the child.
-func (p *Process) Close() error {
+// pgroup or kill descendants. The caller must still Wait to reap the child.
+func (p *process) Close() error {
 	if !p.waited {
 		return p.Kill()
 	}

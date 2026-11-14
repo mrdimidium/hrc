@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Nikolay Govorov
 // SPDX-License-Identifier: BSD-3-Clause
 
-package process
+package slotpgroup
 
 import (
 	"errors"
@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"dimidiumlabs.io/hrc/internal/slot"
 )
 
 func TestPGroupEnvironment(t *testing.T) {
@@ -47,7 +49,7 @@ func TestPGroupEnvironment(t *testing.T) {
 // Detached descendants outlive their Worker, but not their slot. Closing one
 // group must not terminate another slot, even when both run this same binary.
 func TestPGroupDetachedDescendants(t *testing.T) {
-	groups := []*PGroup{newTestPGroup(t), newTestPGroup(t)}
+	groups := []*pgroup{newTestPGroup(t), newTestPGroup(t)}
 	children := make([]*descendant, len(groups))
 	for i, g := range groups {
 		listener := listenDescendant(t)
@@ -56,7 +58,7 @@ func TestPGroupDetachedDescendants(t *testing.T) {
 			t.Fatal(err)
 		}
 		children[i] = listener.Accept()
-		if state, err := p.Wait(); err != nil || state.ExitCode() != 17 {
+		if state, err := p.Wait(); err != nil || state != 17 {
 			t.Fatalf("Wait = %v, %v: %s", state, err, output)
 		}
 		if err := p.Close(); err != nil {
@@ -113,14 +115,14 @@ func TestPGroupClose(t *testing.T) {
 	if _, err := p.Wait(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.Start(Config{}); !errors.Is(err, os.ErrClosed) {
+	if _, err := g.Start(slot.Command{}); !errors.Is(err, os.ErrClosed) {
 		t.Fatalf("Start after Close = %v", err)
 	}
-	if _, err := (*PGroup)(nil).Start(Config{}); err == nil {
+	if _, err := (*pgroup)(nil).Start(slot.Command{}); err == nil {
 		t.Fatal("started a process without a group")
 	}
-	var zero PGroup
-	if _, err := zero.Start(Config{}); err == nil {
+	var zero pgroup
+	if _, err := zero.Start(slot.Command{}); err == nil {
 		t.Fatal("started a process in an uninitialized group")
 	}
 	if err := zero.Close(); err == nil {

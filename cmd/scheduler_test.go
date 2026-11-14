@@ -9,10 +9,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
-	"dimidiumlabs.io/hrc/internal/process"
+	"dimidiumlabs.io/hrc/internal/slot"
+	slotpgroup "dimidiumlabs.io/hrc/internal/slot-pgroup"
+	spacehost "dimidiumlabs.io/hrc/internal/space-host"
 )
 
 func TestHostSchedulerWithoutQuota(t *testing.T) {
@@ -25,7 +28,7 @@ func TestHostSchedulerWithoutQuota(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if free, _ := p.state(); free != math.MaxInt32 {
+	if free, _ := p.State(); free != math.MaxInt32 {
 		t.Fatalf("unlimited pool capacity = %d", free)
 	}
 }
@@ -61,7 +64,11 @@ func TestSlotCount(t *testing.T) {
 
 func newTestScheduler(t *testing.T, root string, total int) *scheduler {
 	t.Helper()
-	p := newScheduler(root, total)
+	environment, err := spacehost.New(root, slotpgroup.New)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := newScheduler(environment, total)
 	t.Cleanup(func() {
 		if err := p.Close(); err != nil {
 			t.Error(err)
@@ -70,254 +77,205 @@ func newTestScheduler(t *testing.T, root string, total int) *scheduler {
 	return p
 }
 
-func acquireTestSlot(t *testing.T, p *scheduler, group *Group) *slot {
+func takeSlot(t *testing.T, p *scheduler, group *Group) (*allocation, func()) {
 	t.Helper()
-	p.queue()
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	s, err := p.acquire(ctx, group)
+	reservation := p.Reserve()
+	if err := reservation.Wait(t.Context()); err != nil {
+		reservation.Close()
+		t.Fatal(err)
+	}
+	s, err := p.acquire(t.Context(), group)
 	if err != nil {
+		reservation.Close()
 		t.Fatal(err)
 	}
-	return s
+	release := sync.OnceFunc(func() {
+		if err := errors.Join(p.release(s), reservation.Close()); err != nil {
+			t.Error(err)
+		}
+	})
+	t.Cleanup(release)
+	return s, release
 }
 
-type slotAcquisition struct {
-	slot *slot
-	err  error
-}
-
-func TestSchedulerQueue(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	p := newTestScheduler(t, t.TempDir(), 1)
-	group := &Group{}
-	if free, _ := p.state(); free != 1 {
-		t.Fatalf("free = %d, want 1", free)
-	}
-	first := acquireTestSlot(t, p, group)
-	free, released := p.state()
-	if free != 0 {
-		t.Fatalf("free = %d, want 0", free)
-	}
-
-	// A queued runner reserves the next free slot, so no group advertises it.
-	p.queue()
-	acquired := make(chan slotAcquisition, 1)
-	go func() {
-		s, err := p.acquire(ctx, group)
-		acquired <- slotAcquisition{s, err}
-	}()
-	select {
-	case got := <-acquired:
-		t.Fatalf("acquired a slot beyond capacity: %v", got.err)
-	case <-time.After(10 * time.Millisecond):
-	}
-	if free, _ := p.state(); free != 0 {
-		t.Fatalf("free = %d with a queued runner, want 0", free)
-	}
-	if err := p.release(first); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-released:
-	default:
-		t.Fatal("release did not notify")
-	}
-	second := <-acquired
-	if second.err != nil {
-		t.Fatalf("queued acquire: %v", second.err)
-	}
-	if free, _ := p.state(); free != 0 {
-		t.Fatalf("free = %d after handing the slot over, want 0", free)
-	}
-
-	canceled, cancelWait := context.WithCancel(ctx)
-	p.queue()
-	go func() {
-		s, err := p.acquire(canceled, group)
-		acquired <- slotAcquisition{s, err}
-	}()
-	cancelWait()
-	if got := <-acquired; !errors.Is(got.err, context.Canceled) {
-		t.Fatalf("canceled acquire: %v", got.err)
-	}
-	if err := p.release(second.slot); err != nil {
-		t.Fatal(err)
-	}
-	if free, _ := p.state(); free != 1 {
-		t.Fatalf("free = %d after cancel and release, want 1", free)
-	}
-}
-
-func TestSchedulerReuse(t *testing.T) {
-	root := t.TempDir()
-	p := newTestScheduler(t, root, 3)
-	group := &Group{Name: "smoke", ReuseDirs: true}
-	first := acquireTestSlot(t, p, group)
-	second := acquireTestSlot(t, p, group)
-	if first.dir != filepath.Join(root, "smoke-1") || second.dir != filepath.Join(root, "smoke-2") {
-		t.Fatalf("directories %q, %q", first.dir, second.dir)
-	}
-	if first.group == second.group {
-		t.Fatal("different slots share a process group")
-	}
-	if err := p.release(first); err != nil {
-		t.Fatal(err)
-	}
-	if err := p.release(second); err != nil {
-		t.Fatal(err)
-	}
-	// Both the directory and PGroup survive a job. The warmest slot is first.
-	if s := acquireTestSlot(t, p, group); s != second {
-		t.Errorf("took %v, want second slot", s)
-	}
-	if s := acquireTestSlot(t, p, group); s != first {
-		t.Errorf("took %v, want first slot", s)
-	}
-	if s := acquireTestSlot(t, p, group); s.dir != filepath.Join(root, "smoke-3") {
-		t.Errorf("took %q, want a new slot", s.dir)
-	}
-	if err := p.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
-		t.Fatalf("slot workspaces survived: %v, %v", entries, err)
-	}
-	if _, err := first.group.Start(process.Config{}); !errors.Is(err, os.ErrClosed) {
-		t.Fatalf("slot process group survived: %v", err)
-	}
-	p.queue()
-	if _, err := p.acquire(t.Context(), group); !errors.Is(err, os.ErrClosed) {
-		t.Fatalf("acquire after Close: %v", err)
-	}
-}
-
-func TestSchedulerGroupIsolation(t *testing.T) {
-	p := newTestScheduler(t, t.TempDir(), 1)
-	firstGroup := &Group{Name: "first", ReuseDirs: true}
-	secondGroup := &Group{Name: "second", ReuseDirs: true}
-	first := acquireTestSlot(t, p, firstGroup)
-	if err := os.WriteFile(filepath.Join(first.dir, "cache"), []byte("private"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	p.queue()
-	acquired := make(chan slotAcquisition, 1)
-	go func() {
-		s, err := p.acquire(ctx, secondGroup)
-		acquired <- slotAcquisition{s, err}
-	}()
-	select {
-	case got := <-acquired:
-		t.Fatalf("second group exceeded shared host capacity: %v", got.err)
-	case <-time.After(10 * time.Millisecond):
-	}
-	if err := p.release(first); err != nil {
-		t.Fatal(err)
-	}
-	second := <-acquired
-	if second.err != nil {
-		t.Fatal(second.err)
-	}
-	if second.slot == first || second.slot.group == first.group {
-		t.Fatal("different GitHub groups shared a slot")
-	}
-	if _, err := os.Stat(filepath.Join(second.slot.dir, "cache")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("another group's cache is visible: %v", err)
-	}
-	if err := p.release(second.slot); err != nil {
-		t.Fatal(err)
-	}
-	if s := acquireTestSlot(t, p, firstGroup); s != first {
-		t.Fatal("first group's idle slot was not reused")
-	}
-	if data, err := os.ReadFile(filepath.Join(first.dir, "cache")); err != nil || string(data) != "private" {
-		t.Fatalf("first group's cache changed: %q, %v", data, err)
-	}
-}
-
-func TestSchedulerEphemeralRelease(t *testing.T) {
-	p := newTestScheduler(t, t.TempDir(), 1)
-	group := &Group{Name: "smoke"}
-	first := acquireTestSlot(t, p, group)
-	if err := p.release(first); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(first.dir); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("ephemeral directory survived release: %v", err)
-	}
-	if _, err := first.group.Start(process.Config{}); !errors.Is(err, os.ErrClosed) {
-		t.Fatalf("ephemeral process group survived release: %v", err)
-	}
-	second := acquireTestSlot(t, p, group)
-	if second == first || second.dir == first.dir || second.group == first.group {
-		t.Fatal("ephemeral slot was reused")
-	}
-}
-
-func TestSchedulerAcquireCanceled(t *testing.T) {
+func TestReservationDoesNotPrepareSlot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "builds")
 	p := newTestScheduler(t, root, 1)
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	p.queue()
-	if _, err := p.acquire(ctx, &Group{}); !errors.Is(err, context.Canceled) {
-		t.Fatalf("canceled acquire = %v", err)
+	first := p.Reserve()
+	defer first.Close()
+	if available, _ := p.State(); available != 0 {
+		t.Fatalf("pending acquisition was advertised: %d", available)
+	}
+	if err := first.Wait(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("canceled acquire created a workspace: %v", err)
+		t.Fatalf("reservation prepared a workspace: %v", err)
 	}
-	if free, _ := p.state(); free != 1 {
-		t.Fatalf("canceled acquire leaked capacity: %d", free)
+	second := p.Reserve()
+	defer second.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	acquired := make(chan error, 1)
+	go func() { acquired <- second.Wait(ctx) }()
+	select {
+	case err := <-acquired:
+		t.Fatalf("acquired beyond capacity: %v", err)
+	case <-time.After(10 * time.Millisecond):
+	}
+	_, changed := p.State()
+	first.Close()
+	select {
+	case <-changed:
+	default:
+		t.Fatal("release did not notify queues")
+	}
+	if err := <-acquired; err != nil {
+		t.Fatal(err)
+	}
+	second.Close()
+	if available, _ := p.State(); available != 1 {
+		t.Fatalf("released reservations leaked capacity: %d", available)
 	}
 }
 
-func TestSchedulerAcquireFailure(t *testing.T) {
-	for _, reusable := range []bool{false, true} {
-		t.Run(map[bool]string{false: "ephemeral", true: "reusable"}[reusable], func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "builds")
-			if err := os.WriteFile(root, nil, 0600); err != nil {
+func TestReservationCancellationAndShutdown(t *testing.T) {
+	for _, shutdown := range []bool{false, true} {
+		t.Run(map[bool]string{false: "cancel", true: "shutdown"}[shutdown], func(t *testing.T) {
+			p := newTestScheduler(t, t.TempDir(), 1)
+			first := p.Reserve()
+			defer first.Close()
+			if err := first.Wait(t.Context()); err != nil {
 				t.Fatal(err)
 			}
-			p := newTestScheduler(t, root, 1)
-			group := &Group{Name: "smoke", ReuseDirs: reusable}
-			p.queue()
-			if _, err := p.acquire(t.Context(), group); err == nil {
-				t.Fatal("acquired a workspace under a file")
+			waiting := p.Reserve()
+			defer waiting.Close()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- waiting.Wait(ctx) }()
+			expected := context.Canceled
+			if shutdown {
+				expected = os.ErrClosed
+				if err := p.Close(); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				cancel()
 			}
-			if free, _ := p.state(); free != 1 {
-				t.Fatalf("failed allocation leaked capacity: %d", free)
+			select {
+			case err := <-done:
+				if !errors.Is(err, expected) {
+					t.Fatalf("waiting acquisition: %v, want %v", err, expected)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("waiter was not woken")
 			}
-			if err := os.Remove(root); err != nil {
-				t.Fatal(err)
+			waiting.Close()
+			first.Close()
+			if !shutdown {
+				if available, _ := p.State(); available != 1 {
+					t.Fatalf("canceled reservation leaked capacity: %d", available)
+				}
 			}
-			acquireTestSlot(t, p, group)
 		})
 	}
 }
 
-func TestSchedulerCloseWakesWaiter(t *testing.T) {
-	p := newTestScheduler(t, t.TempDir(), 1)
-	group := &Group{ReuseDirs: true, Name: "smoke"}
-	acquireTestSlot(t, p, group)
-	p.queue()
-	acquired := make(chan error, 1)
-	go func() {
-		_, err := p.acquire(t.Context(), group)
-		acquired <- err
-	}()
-	if err := p.Close(); err != nil {
+func TestSchedulerReuseAndOwnership(t *testing.T) {
+	root := t.TempDir()
+	p := newTestScheduler(t, root, 2)
+	group := &Group{Name: "smoke", ReuseDirs: true}
+	first, releaseFirst := takeSlot(t, p, group)
+	second, releaseSecond := takeSlot(t, p, group)
+	if first.Dir() != filepath.Join(root, "smoke-1") || second.Dir() != filepath.Join(root, "smoke-2") {
+		t.Fatalf("unexpected directories: %q, %q", first.Dir(), second.Dir())
+	}
+	if first.Slot == second.Slot {
+		t.Fatal("different allocations share a slot")
+	}
+	cache := filepath.Join(second.Dir(), "cache")
+	if err := os.WriteFile(cache, []byte("warm"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case err := <-acquired:
-		if !errors.Is(err, os.ErrClosed) {
-			t.Fatalf("waiting acquire = %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("pool shutdown did not wake a waiting runner")
+	releaseFirst()
+	releaseSecond()
+	reused, releaseReused := takeSlot(t, p, group)
+	if reused != second {
+		t.Fatal("warmest slot was not reused")
+	}
+	releaseReused()
+	other, releaseOther := takeSlot(t, p, &Group{Name: "other", ReuseDirs: true})
+	if other.Slot == second.Slot {
+		t.Fatal("different owners shared a slot")
+	}
+	if _, err := os.Stat(filepath.Join(other.Dir(), "cache")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("another owner's cache is visible: %v", err)
+	}
+	releaseOther()
+	reused, _ = takeSlot(t, p, group)
+	if reused != second {
+		t.Fatal("owner's retained slot was lost")
+	}
+	if data, err := os.ReadFile(cache); err != nil || string(data) != "warm" {
+		t.Fatalf("slot state was lost: %q, %v", data, err)
+	}
+}
+
+func TestEphemeralSlotRelease(t *testing.T) {
+	p := newTestScheduler(t, t.TempDir(), 1)
+	first, release := takeSlot(t, p, &Group{})
+	release()
+	if _, err := os.Stat(first.Dir()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("ephemeral workspace survived: %v", err)
+	}
+	if _, err := first.Start(slot.Command{}); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("ephemeral process group survived: %v", err)
+	}
+	second, _ := takeSlot(t, p, &Group{})
+	if second.Slot == first.Slot || second.Dir() == first.Dir() {
+		t.Fatal("ephemeral slot was reused")
+	}
+}
+
+func TestSlotPreparationFailure(t *testing.T) {
+	for _, reusable := range []bool{false, true} {
+		t.Run(map[bool]string{false: "ephemeral", true: "reusable"}[reusable], func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "builds")
+			if err := os.WriteFile(root, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			p := newTestScheduler(t, root, 1)
+			reservation := p.Reserve()
+			if err := reservation.Wait(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			group := &Group{Name: "smoke", ReuseDirs: reusable}
+			if _, err := p.acquire(t.Context(), group); err == nil {
+				t.Fatal("prepared a workspace under a file")
+			}
+			reservation.Close()
+			if available, _ := p.State(); available != 1 {
+				t.Fatalf("preparation leaked capacity: %d", available)
+			}
+			if err := os.Remove(root); err != nil {
+				t.Fatal(err)
+			}
+			takeSlot(t, p, group)
+		})
+	}
+}
+
+func TestCanceledSlotPreparation(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "builds")
+	p := newTestScheduler(t, root, 1)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := p.acquire(ctx, &Group{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled preparation: %v", err)
+	}
+	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("canceled preparation created workspace: %v", err)
 	}
 }
 
@@ -325,28 +283,26 @@ func TestSlotClose(t *testing.T) {
 	for _, idle := range []bool{false, true} {
 		t.Run(map[bool]string{false: "busy", true: "idle"}[idle], func(t *testing.T) {
 			pool := newTestScheduler(t, t.TempDir(), 1)
-			s := acquireTestSlot(t, pool, &Group{Name: "smoke", ReuseDirs: true})
+			s, release := takeSlot(t, pool, &Group{Name: "smoke", ReuseDirs: true})
 			self, err := os.Executable()
 			if err != nil {
 				t.Fatal(err)
 			}
-			child, err := s.group.Start(process.Config{Path: self, Dir: s.dir, Args: []string{"hrc-slot-child"}})
+			child, err := s.Start(slot.Command{Path: self, Args: []string{"hrc-slot-child"}})
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { child.Kill(); child.Wait(); child.Close() })
 			if idle {
-				if err := pool.release(s); err != nil {
-					t.Fatal(err)
-				}
+				release()
 			}
 			if err := pool.Close(); err != nil {
 				t.Fatal(err)
 			}
-			if state, err := child.Wait(); err != nil || state.Success() {
-				t.Fatalf("slot process survived: %v, %v", state, err)
+			if code, err := child.Wait(); err != nil || code == 0 {
+				t.Fatalf("slot process survived: %d, %v", code, err)
 			}
-			if _, err := os.Stat(s.dir); !errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Stat(s.Dir()); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("slot directory survived: %v", err)
 			}
 		})

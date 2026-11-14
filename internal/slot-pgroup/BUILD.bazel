@@ -6,23 +6,29 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 exports_files(["BUILD.bazel"])
 
 go_library(
-    name = "process",
+    name = "slot-pgroup",
     srcs = glob(
         ["*.go"],
         exclude = ["*_test.go"],
     ),
-    importpath = "dimidiumlabs.io/hrc/internal/process",
+    importpath = "dimidiumlabs.io/hrc/internal/slot-pgroup",
     visibility = ["//visibility:public"],
-    deps = ["//internal/runtime"] + select({
+    deps = [
+        "//internal/runtime",
+        "//internal/slot",
+    ] + select({
         "@platforms//os:windows": ["@org_golang_x_sys//windows"],
         "//conditions:default": [],
     }),
 )
 
 go_test(
-    name = "process_test",
+    name = "slot-pgroup_test",
     size = "small",
     srcs = glob(["*_test.go"]),
-    embed = [":process"],
-    deps = ["//internal/runtime"],
+    embed = [":slot-pgroup"],
+    deps = [
+        "//internal/runtime",
+        "//internal/slot",
+    ],
 )

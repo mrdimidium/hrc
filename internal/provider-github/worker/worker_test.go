@@ -21,7 +21,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"dimidiumlabs.io/hrc/internal/process"
+	slotpgroup "dimidiumlabs.io/hrc/internal/slot-pgroup"
 )
 
 func TestMain(m *testing.M) {
@@ -164,7 +164,7 @@ func workerTestConfig(t *testing.T, mode string, count int) (Config, *workerProc
 	if err = os.WriteFile(filepath.Join(dir, "bin", binaryName()), data, 0700); err != nil {
 		t.Fatal(err)
 	}
-	group, err := process.NewPGroup()
+	group, err := slotpgroup.New(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func workerTestConfig(t *testing.T, mode string, count int) (Config, *workerProc
 	})
 	output := &workerProcessTestOutput{ready: make(chan struct{})}
 	env := []string{"HRC_WORKER_PROCESS_TEST=1", "HRC_WORKER_TEST_DIR=" + dir, "HRC_WORKER_TEST_MODE=" + mode, "HRC_WORKER_TEST_COUNT=" + strconv.Itoa(count)}
-	return Config{PGroup: group, Path: filepath.Join(dir, "bin", binaryName()), Dir: dir, WorkDir: dir, Env: env, Stdout: output, Stderr: output}, output
+	return Config{Slot: group, Path: filepath.Join(dir, "bin", binaryName()), Dir: dir, WorkDir: dir, Env: env, Stdout: output, Stderr: output}, output
 }
 
 func workerProcessTestJob(index int) []byte {
@@ -569,12 +569,12 @@ func TestWorkerBeforeStart(t *testing.T) {
 	}
 }
 
-func TestWorkerRequiresPGroup(t *testing.T) {
+func TestWorkerRequiresSlot(t *testing.T) {
 	config, _ := workerTestConfig(t, "frames", 1)
-	config.PGroup = nil
+	config.Slot = nil
 	w := newTestWorker(t, config) // Installation validation needs no slot.
 	if err := w.StartJob(t.Context(), workerProcessTestJob(0), ""); err == nil {
-		t.Fatal("started a Worker without a process group")
+		t.Fatal("started a Worker without a slot")
 	}
 }
 

@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Nikolay Govorov
+# SPDX-License-Identifier: BSD-3-Clause
+
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+exports_files(["BUILD.bazel"])
+
+go_library(
+    name = "provider-github",
+    srcs = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ),
+    importpath = "dimidiumlabs.io/hrc/internal/provider-github",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal/provider",
+        "//internal/provider-github/listener",
+        "//internal/provider-github/worker",
+        "//internal/slot",
+        "@com_github_actions_scaleset//:scaleset",
+    ],
+)
+
+go_test(
+    name = "provider-github_test",
+    size = "small",
+    srcs = glob(["*_test.go"]),
+    embed = [":provider-github"],
+    deps = [
+        "//internal/provider-github/listener",
+        "@com_github_actions_scaleset//:scaleset",
+    ],
+)

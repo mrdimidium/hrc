@@ -8,424 +8,119 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
-	"math/rand/v2"
-	"os"
-	"path/filepath"
-	"slices"
-	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
-	"dimidiumlabs.io/hrc/internal/listener"
-	"dimidiumlabs.io/hrc/internal/worker"
-
-	"github.com/actions/scaleset"
+	"dimidiumlabs.io/hrc/internal/provider"
 )
 
-// Session retry delays grow from the minimum to the maximum and reset after a
-// session has served for longer than the maximum.
-var sessionRetryMin, sessionRetryMax = 5 * time.Second, 2 * time.Minute
-
-// run returns an error only for local failures that a retry cannot fix. GitHub
-// API and session failures are retried until ctx is canceled, without
-// interrupting runners already started by the group.
-func run(ctx context.Context, cfg *Config, group *Group, host *scheduler) error {
-	logger := slog.Default().With("group", group.Name)
-	logger.Info("Starting group controller")
-
-	runnerDir := cfg.DirRunner
-	if _, err := worker.New(worker.Config{Path: cfg.PathWorker, Dir: runnerDir}); err != nil {
-		return fmt.Errorf("validate runner installation: %w", err)
-	}
-	if err := os.MkdirAll(cfg.DirBuilds, 0o700); err != nil {
-		return fmt.Errorf("create builds directory: %w", err)
-	}
-
-	// Runners outlive the session that started them: they hold their own
-	// Broker connections and must not be canceled by a session failure.
-	var runners sync.WaitGroup
-	var running atomic.Int32
-	defer runners.Wait()
-
-	delay := sessionRetryMin
-	for {
-		started := time.Now()
-		err := serve(ctx, cfg, group, host, runnerDir, &runners, &running)
-		if ctx.Err() != nil {
-			return nil
-		}
-		if time.Since(started) > sessionRetryMax {
-			delay = sessionRetryMin
-		}
-		logger.Error("Group session failed, retrying", "err", err, "delay", delay)
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil
-		case <-timer.C:
-		}
-		delay = min(2*delay, sessionRetryMax)
-	}
-}
-
-// serve connects the group's scale set and starts runners for assigned jobs
-// until the session fails or ctx is canceled.
-func serve(ctx context.Context, cfg *Config, group *Group, host *scheduler, runnerDir string, runners *sync.WaitGroup, running *atomic.Int32) error {
-	logger := slog.Default().With("group", group.Name)
-	info := scaleset.SystemInfo{System: "hrc", Version: Version}
-
-	var err error
-	var client *scaleset.Client
-	if group.GitHubApp.Validate() == nil {
-		var auth scaleset.GitHubAppAuth
-		if auth, err = group.GitHubApp.auth(); err != nil {
-			return err
-		}
-		client, err = scaleset.NewClientWithGitHubApp(scaleset.ClientWithGitHubAppConfig{
-			GitHubConfigURL: group.Url, GitHubAppAuth: auth, SystemInfo: info,
-		})
-	} else {
-		var token string
-		if token, err = group.Token.Take(); err != nil {
-			return fmt.Errorf("read token: %w", err)
-		}
-		client, err = scaleset.NewClientWithPersonalAccessToken(scaleset.NewClientWithPersonalAccessTokenConfig{
-			GitHubConfigURL: group.Url, PersonalAccessToken: token, SystemInfo: info,
-		})
-	}
-	if err != nil {
-		return fmt.Errorf("create scaleset client: %w", err)
-	}
-
-	runnerGroupID := 1
-	if group.Group != scaleset.DefaultRunnerGroup {
-		runnerGroup, err := client.GetRunnerGroupByName(ctx, group.Group)
-		if err != nil {
-			return fmt.Errorf("get runner group: %w", err)
-		}
-		runnerGroupID = runnerGroup.ID
-	}
-
-	scaleSet, err := ensureRunnerScaleSet(ctx, client, runnerGroupID, group)
-	if err != nil {
+func serve(ctx context.Context, queue provider.Queue, host *scheduler, group *Group) error {
+	return queue.Serve(ctx, host, func(ctx context.Context, job provider.Job) error {
+		result, err := runJob(ctx, job, host, group, time.Minute)
+		slog.Info("Job completed", "group", group.Name, "job", job.ID(), "result", result.String())
 		return err
-	}
-	logger.Info("Using runner scale set", "id", scaleSet.ID)
-
-	info.ScaleSetID = scaleSet.ID
-
-	client.SetSystemInfo(info)
-
-	session, err := client.MessageSessionClient(ctx, scaleSet.ID, cfg.Id)
-	if err != nil {
-		return fmt.Errorf("create message session: %w", err)
-	}
-	defer func() {
-		if err := session.Close(context.WithoutCancel(ctx)); err != nil {
-			logger.Error("Close message session", "err", err)
-		}
-	}()
-
-	statistics := session.Session().Statistics
-	lastMessageID := 0
-	interrupted := false
-	for ctx.Err() == nil {
-		// Statistics are stale after an interrupted poll: a runner that just
-		// finished may still count as assigned, and would be replaced needlessly.
-		if statistics != nil && !interrupted {
-			missing := statistics.TotalAssignedJobs - int(running.Load())
-			for range missing {
-				if ctx.Err() != nil {
-					break
-				}
-				running.Add(1)
-				host.queue()
-				runners.Go(func() {
-					s, err := host.acquire(ctx, group)
-					if err != nil {
-						running.Add(-1)
-						if ctx.Err() == nil {
-							logger.Error("Acquire runner slot", "err", err)
-						}
-						return
-					}
-					err = runRunner(ctx, client, scaleSet.ID, cfg, runnerDir, s)
-					// Leave the group's count before the slot is advertised again.
-					running.Add(-1)
-					err = errors.Join(err, host.release(s))
-					if err != nil {
-						logger.Error("Runner failed", "err", err)
-					}
-				})
-			}
-		}
-
-		// GitHub assigns the scale set at most the advertised capacity: the
-		// group's own runners plus the host's free slots. A release restarts
-		// the long poll, so GitHub learns about the freed slot immediately.
-		// An unacknowledged message is delivered again by the next poll.
-		free, released := host.state()
-		capacity := min(int(running.Load())+free, math.MaxInt32)
-		poll, cancelPoll := context.WithCancel(ctx)
-		go func() {
-			select {
-			case <-released:
-				cancelPoll()
-			case <-poll.Done():
-			}
-		}()
-		message, err := session.GetMessage(poll, lastMessageID, capacity)
-		interrupted = err != nil && poll.Err() != nil
-		cancelPoll()
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-			if interrupted {
-				continue
-			}
-			return fmt.Errorf("get scaleset message: %w", err)
-		}
-		if message == nil {
-			continue
-		}
-		if err := session.DeleteMessage(ctx, message.MessageID); err != nil {
-			return fmt.Errorf("delete scaleset message: %w", err)
-		}
-
-		lastMessageID = message.MessageID
-		if len(message.JobAvailableMessages) > 0 {
-			ids := make([]int64, 0, len(message.JobAvailableMessages))
-			for _, job := range message.JobAvailableMessages {
-				ids = append(ids, job.RunnerRequestID)
-			}
-			if _, err := session.AcquireJobs(ctx, ids); err != nil {
-				return fmt.Errorf("acquire jobs: %w", err)
-			}
-		}
-
-		statistics = message.Statistics
-	}
-
-	return nil
-}
-
-// ensureRunnerScaleSet finds or creates the group's scale set. The Actions
-// service fixes a scale set's labels at creation: an update returns success
-// but keeps the old labels. A scale set whose labels differ from the
-// configuration is therefore deleted and created again, with a new ID.
-func ensureRunnerScaleSet(ctx context.Context, client *scaleset.Client, runnerGroupID int, group *Group) (*scaleset.RunnerScaleSet, error) {
-	// Without configured labels, GitHub routes by the scale set name.
-	labels := []scaleset.Label{{Name: group.Name}}
-	if len(group.Labels) > 0 {
-		labels = make([]scaleset.Label, 0, len(group.Labels))
-		for _, label := range group.Labels {
-			labels = append(labels, scaleset.Label{Name: label})
-		}
-	}
-	create := func() (*scaleset.RunnerScaleSet, error) {
-		scaleSet, err := client.CreateRunnerScaleSet(ctx, &scaleset.RunnerScaleSet{
-			Name: group.Name, RunnerGroupID: runnerGroupID, Labels: slices.Clone(labels),
-			RunnerSetting: scaleset.RunnerSetting{DisableUpdate: true},
-		})
-		if err == nil {
-			return scaleSet, nil
-		}
-		// Another host can create the same scale set between our lookup and POST.
-		// The API also returns a conflict when a retried POST already succeeded.
-		existing, lookupErr := client.GetRunnerScaleSet(ctx, runnerGroupID, group.Name)
-		if lookupErr != nil || existing == nil {
-			return nil, fmt.Errorf("create scale set: %w", err)
-		}
-		return existing, nil
-	}
-
-	scaleSet, err := client.GetRunnerScaleSet(ctx, runnerGroupID, group.Name)
-	if err != nil {
-		return nil, fmt.Errorf("get scale set: %w", err)
-	}
-	if scaleSet == nil {
-		return create()
-	}
-	if sameLabels(scaleSet.Labels, labels) {
-		return scaleSet, nil
-	}
-	// Labels change only with the configuration, so this happens when hrc
-	// starts, before the group has runners. A failed creation is retried by the
-	// next session, which no longer finds the scale set.
-	slog.Info("Recreating runner scale set with the configured labels", "group", group.Name, "id", scaleSet.ID,
-		"labels", labelNames(scaleSet.Labels), "configured", labelNames(labels))
-	if err := client.DeleteRunnerScaleSet(ctx, scaleSet.ID); err != nil {
-		return nil, fmt.Errorf("delete scale set with outdated labels: %w", err)
-	}
-	return create()
-}
-
-func labelNames(labels []scaleset.Label) []string {
-	names := make([]string, 0, len(labels))
-	for _, label := range labels {
-		names = append(names, label.Name)
-	}
-	return names
-}
-
-// sameLabels compares label names as sets: runs-on matching ignores order
-// and case.
-func sameLabels(current, desired []scaleset.Label) bool {
-	names := func(labels []scaleset.Label) []string {
-		result := make([]string, 0, len(labels))
-		for _, label := range labels {
-			result = append(result, strings.ToLower(label.Name))
-		}
-		slices.Sort(result)
-		return slices.Compact(result)
-	}
-	return slices.Equal(names(current), names(desired))
-}
-
-// runRunner registers and runs one ephemeral runner in an acquired slot. The
-// scheduler owns the slot's lifetime and releases it after the runner stops.
-func runRunner(ctx context.Context, client *scaleset.Client, scaleSetID int, cfg *Config, runnerDir string, s *slot) error {
-	name := cfg.Id + "-" + filepath.Base(s.dir)
-	if s.reusable {
-		// A runner left registered by a crash must not block the name.
-		name = fmt.Sprintf("%s-%s-%06x", cfg.Id, filepath.Base(s.dir), rand.Uint32()&0xffffff)
-	}
-	version, err := os.ReadFile(filepath.Join(runnerDir, "VERSION"))
-	if err != nil {
-		return fmt.Errorf("read runner version: %w", err)
-	}
-	jit, err := client.GenerateJitRunnerConfig(ctx, &scaleset.RunnerScaleSetJitRunnerSetting{
-		Name: name, WorkFolder: ".",
-	}, scaleSetID)
-	if err != nil {
-		return fmt.Errorf("generate runner config: %w", err)
-	}
-	registration, err := parseRunnerRegistration(jit.EncodedJITConfig)
-	if err != nil {
-		return fmt.Errorf("decode runner config: %w", err)
-	}
-	localConfig := registration.workerConfig(s.dir)
-	localConfig.PGroup = s.group
-	localConfig.Path, localConfig.Dir = cfg.PathWorker, runnerDir
-	local, err := worker.New(localConfig)
-	if err != nil {
-		return fmt.Errorf("create Worker: %w", err)
-	}
-	defer local.Close()
-	api, err := listener.NewClient(listener.ClientConfig{
-		BrokerURL: registration.settings.ServerURLV2, Version: strings.TrimSpace(string(version)),
-		Credentials: registration.credentials, PrivateKey: registration.key,
 	})
-	if err != nil {
-		return fmt.Errorf("create runner API: %w", err)
-	}
-	defer api.Close()
-	network, err := listener.New(api, registration.listenerConfig(strings.TrimSpace(string(version))))
-	if err != nil {
-		return fmt.Errorf("create Listener: %w", err)
-	}
-	result, err := runJob(ctx, network, local, cfg.DirLogs, time.Minute)
-	if err != nil {
-		return fmt.Errorf("run job: %w", err)
-	}
-	slog.Info("Runner job completed", "runner", name, "result", result.String())
-	return nil
 }
 
-// runJob connects independent network supervision and local execution. It owns
-// cancellation policy, grace periods and completion after infrastructure failure.
-func runJob(ctx context.Context, network *listener.Listener, local *worker.Worker, logRoot string, cancelTimeout time.Duration) (result worker.Result, err error) {
-	result = worker.Failed
-	var job *listener.RunJob
-	completed := false
+// runJob keeps supervision alive through execution cleanup and completion.
+func runJob(ctx context.Context, job provider.Job, host *scheduler, group *Group, grace time.Duration) (result provider.Result, err error) {
+	result = provider.Failed
+	var instance *allocation
+	var local provider.Run
 	defer func() {
-		// Keep renewal alive until local execution and server completion settle.
-		err = errors.Join(err, local.Close())
-		if job != nil && !completed {
-			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
-			defer cancel()
-			conclusion := result
-			if !conclusion.Valid() || conclusion == worker.Succeeded || conclusion == worker.SucceededWithIssues {
-				conclusion = worker.Failed
-			}
-			request := &listener.CompleteJobRequest{Conclusion: conclusion.String()}
-			if err != nil {
-				request.Annotations = []listener.JobAnnotation{{Level: "failure", IsInfrastructureIssue: true,
-					Message: "Runner infrastructure failed before normal job completion."}}
-			}
-			if e := network.CompleteJob(cleanup, request); e != nil {
-				err = errors.Join(err, fmt.Errorf("complete job: %w", e))
-			}
+		if local != nil {
+			err = errors.Join(err, local.Close())
 		}
-		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer cancel()
-		err = errors.Join(err, network.Close(cleanup))
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		err = errors.Join(err, job.Complete(cleanup, result, err))
+		cancel()
+		cleanup, cancel = context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		err = errors.Join(err, job.Close(cleanup))
+		cancel()
+		if instance != nil {
+			err = errors.Join(err, host.release(instance))
+		}
 	}()
-	if cancelTimeout < 0 {
+	if grace < 0 {
 		return result, errors.New("negative job cancellation timeout")
 	}
-	if cancelTimeout == 0 {
-		cancelTimeout = time.Minute
+	if grace == 0 {
+		grace = time.Minute
 	}
-	job, err = network.WaitJob(ctx)
-	if errors.Is(err, listener.ErrShutdown) {
-		return worker.Canceled, nil
+	if stopped, status, cause := pendingStop(ctx, job); stopped {
+		return status, cause
 	}
-	if errors.Is(err, listener.ErrJobUnavailable) {
-		return worker.Skipped, nil
-	}
+	instance, err = host.acquire(ctx, group)
 	if err != nil {
 		return result, err
 	}
-	result, completed, err = executeJob(ctx, network, local, job, logRoot, cancelTimeout)
-	return result, err
+	// Cancellation during preparation must not start execution.
+	if stopped, status, cause := pendingStop(ctx, job); stopped {
+		return status, cause
+	}
+	local, err = job.Run(ctx, instance.Slot)
+	if err != nil {
+		return result, err
+	}
+	return executeJob(ctx, job, local, grace)
 }
 
-func executeJob(ctx context.Context, network *listener.Listener, local *worker.Worker, job *listener.RunJob, logRoot string, grace time.Duration) (worker.Result, bool, error) {
-	// The ID comes from the acquired job, not the scale-set notification.
-	if job.JobID == "" || job.JobID == "." || job.JobID == ".." || strings.ContainsAny(job.JobID, `/\:`) {
-		return worker.Failed, false, fmt.Errorf("unsafe job ID: %q", job.JobID)
+func pendingStop(ctx context.Context, job provider.Job) (bool, provider.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return true, provider.Canceled, err
 	}
-	diagDir := filepath.Join(logRoot, "jobs", job.JobID)
-	if err := os.MkdirAll(diagDir, 0700); err != nil {
-		return worker.Failed, false, fmt.Errorf("create job diagnostics: %w", err)
+	select {
+	case event, ok := <-job.Events():
+		if !ok {
+			return true, provider.Failed, errors.New("job supervision stopped before execution")
+		}
+		switch event.Type {
+		case provider.Cancellation, provider.Shutdown:
+			return true, provider.Canceled, nil
+		case provider.LeaseLost:
+			return true, provider.Abandoned, eventError(event)
+		default:
+			return true, provider.Failed, eventError(event)
+		}
+	default:
+		return false, provider.Unknown, nil
 	}
-	if err := local.StartJob(ctx, job.Raw, diagDir); err != nil {
-		return worker.Failed, false, err
+}
+
+func eventError(event provider.Event) error {
+	if event.Err != nil {
+		return event.Err
 	}
+	return fmt.Errorf("job supervision failed (event %d)", event.Type)
+}
+
+func executeJob(ctx context.Context, job provider.Job, local provider.Run, grace time.Duration) (provider.Result, error) {
 	var cause error
-	result, shutdownRequested := worker.Canceled, false
+	result, shutdownRequested := provider.Canceled, false
 	for cause == nil {
 		select {
 		case <-local.Done():
 			return jobOutcome(local)
 		case <-ctx.Done():
 			cause, shutdownRequested = ctx.Err(), true
-		case event, ok := <-network.Events():
+		case event, ok := <-job.Events():
 			if !ok {
-				cause = errors.New("runner network stopped while job was running")
+				cause = errors.New("job supervision stopped while execution was running")
 				break
 			}
 			switch event.Type {
-			case listener.JobCancellation:
-				if event.Timeout != nil {
-					// Upstream grants at least 60 seconds, then reserves 15 for
-					// completion, leaving Worker at least 45 seconds to clean up.
-					grace = max(time.Minute, *event.Timeout) - 15*time.Second
+			case provider.Cancellation:
+				if event.Grace > 0 {
+					grace = event.Grace
 				}
 				cause = errJobCanceled
-			case listener.RunnerShutdown:
+			case provider.Shutdown:
 				cause, shutdownRequested = errJobCanceled, true
-			case listener.LeaseLost:
-				cause, result = event.Err, worker.Abandoned
-			case listener.NetworkError:
-				cause = event.Err
+			case provider.LeaseLost:
+				cause, result = eventError(event), provider.Abandoned
+			case provider.NetworkError:
+				cause = eventError(event)
 			default:
-				cause = errors.New("unsupported runner network event")
+				cause = errors.New("unsupported job supervision event")
 			}
 		}
 	}
@@ -434,35 +129,34 @@ func executeJob(ctx context.Context, network *listener.Listener, local *worker.W
 	send, cancel := context.WithTimeout(shutdown, 30*time.Second)
 	var sendErr error
 	if shutdownRequested {
-		sendErr = local.Shutdown(send, worker.ShutdownRequested)
+		sendErr = local.Shutdown(send)
 	} else {
-		sendErr = local.CancelJob(send)
+		sendErr = local.Cancel(send)
 	}
 	cancel()
-	// A broken pipe can mean execution has completed. Reap before deciding
-	// whether the Controller must complete the job through the runner API.
+	// A failed send may mean that the process has already completed.
 	select {
 	case <-local.Done():
-		actual, completed, exitErr := jobOutcome(local)
+		actual, exitErr := jobOutcome(local)
 		if errors.Is(cause, errJobCanceled) {
 			cause = nil
 		}
-		return actual, completed, errors.Join(cause, exitErr)
+		return actual, errors.Join(cause, exitErr)
 	case <-shutdown.Done():
 	}
 	closeErr := local.Close()
 	if errors.Is(cause, errJobCanceled) {
-		cause = errors.New("Worker exceeded cancellation timeout")
+		cause = errors.New("run exceeded cancellation timeout")
 	}
-	return result, false, errors.Join(cause, sendErr, closeErr)
+	return result, errors.Join(cause, sendErr, closeErr)
 }
 
 var errJobCanceled = errors.New("job canceled by server")
 
-func jobOutcome(local *worker.Worker) (worker.Result, bool, error) {
+func jobOutcome(local provider.Run) (provider.Result, error) {
 	result, err := local.Wait()
 	if !result.Valid() {
-		return worker.Failed, false, err
+		return provider.Failed, err
 	}
-	return result, true, err
+	return result, err
 }

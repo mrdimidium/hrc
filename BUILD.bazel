@@ -77,11 +77,12 @@ test_suite(
     tests = [
         "//ansible:collection_test",
         "//cmd:cmd_test",
-        "//internal/listener:listener_test",
-        "//internal/process:process_test",
+        "//internal/provider-github:provider-github_test",
+        "//internal/provider-github/listener:listener_test",
+        "//internal/provider-github/worker:runtime_config_test",
+        "//internal/provider-github/worker:worker_test",
         "//internal/runtime:runtime_test",
-        "//internal/worker:runtime_config_test",
-        "//internal/worker:worker_test",
+        "//internal/slot-pgroup:slot-pgroup_test",
         "//tools:requirements.test",
         "//tools:site_test",
         "//tools/rules_ansible:collection_test",
@@ -98,10 +99,15 @@ filegroup(
     ] + [
         "//ansible:starlark_sources",
         "//cmd:BUILD.bazel",
-        "//internal/listener:BUILD.bazel",
-        "//internal/process:BUILD.bazel",
+        "//internal/provider:BUILD.bazel",
+        "//internal/provider-github:BUILD.bazel",
+        "//internal/provider-github/listener:BUILD.bazel",
+        "//internal/provider-github/worker:starlark_sources",
         "//internal/runtime:BUILD.bazel",
-        "//internal/worker:starlark_sources",
+        "//internal/slot:BUILD.bazel",
+        "//internal/slot-pgroup:BUILD.bazel",
+        "//internal/space:BUILD.bazel",
+        "//internal/space-host:BUILD.bazel",
         "//tools:starlark_sources",
         "//tools/format:BUILD.bazel",
         "//tools/rules_ansible:starlark_sources",
@@ -116,7 +122,7 @@ filegroup(
 
 alias(
     name = "runner",
-    actual = "//internal/worker:runner",
+    actual = "//internal/provider-github/worker:runner",
     tags = ["manual"],
 )
 

@@ -11,8 +11,8 @@ go_library(
         ["*.go"],
         exclude = ["*_test.go"],
     ),
-    importpath = "dimidiumlabs.io/hrc/internal/listener",
-    visibility = ["//visibility:public"],
+    importpath = "dimidiumlabs.io/hrc/internal/provider-github/listener",
+    visibility = ["//internal/provider-github:__subpackages__"],  # keep
     deps = [
         "@org_golang_x_oauth2//:oauth2",
         "@org_golang_x_oauth2//clientcredentials",

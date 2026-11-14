@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Nikolay Govorov
 // SPDX-License-Identifier: BSD-3-Clause
 
-package main
+package github
 
 import (
 	"crypto/rsa"
@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 
-	"dimidiumlabs.io/hrc/internal/listener"
-	"dimidiumlabs.io/hrc/internal/worker"
+	"dimidiumlabs.io/hrc/internal/provider-github/listener"
+	"dimidiumlabs.io/hrc/internal/provider-github/worker"
 )
 
 type runnerSettings struct {

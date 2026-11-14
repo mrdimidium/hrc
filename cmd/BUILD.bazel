@@ -16,10 +16,12 @@ go_library(
     importpath = "dimidiumlabs.io/hrc/cmd",
     visibility = ["//:__pkg__"],  # keep
     deps = [
-        "//internal/listener",
-        "//internal/process",
-        "//internal/runtime",
-        "//internal/worker",
+        "//internal/provider",
+        "//internal/provider-github",
+        "//internal/slot",
+        "//internal/slot-pgroup",
+        "//internal/space",
+        "//internal/space-host",
         "@com_github_actions_scaleset//:scaleset",
     ],
 )
@@ -30,7 +32,7 @@ go_binary(
     gc_linkopts = [
         "-s",
         "-w",
-    ],
+    ],  # keep
     pure = "on",
     visibility = ["//visibility:public"],
     x_defs = {"dimidiumlabs.io/hrc/cmd.Version": "{STABLE_HRC_VERSION}"},
@@ -42,9 +44,12 @@ go_test(
     srcs = glob(["*_test.go"]),  # keep
     embed = [":cmd_lib"],
     deps = [
-        "//internal/listener",
-        "//internal/process",
-        "//internal/worker",
+        "//internal/provider",
+        "//internal/provider-github",
+        "//internal/slot",
+        "//internal/slot-pgroup",
+        "//internal/space",
+        "//internal/space-host",
         "@com_github_actions_scaleset//:scaleset",
     ],
 )
@@ -56,7 +61,7 @@ service(
     deps = [
         "//:docs_sources",
         "//:licenses",
-        "//internal/worker:runner",
+        "//internal/provider-github/worker:runner",
     ],
     os = OS,
     arch = ARCH,

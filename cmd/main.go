@@ -10,9 +10,17 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
+
+	github "dimidiumlabs.io/hrc/internal/provider-github"
+	slotpgroup "dimidiumlabs.io/hrc/internal/slot-pgroup"
+	spacehost "dimidiumlabs.io/hrc/internal/space-host"
+
+	"github.com/actions/scaleset"
 )
 
 // Version holds the build version injected by the linker
@@ -83,4 +91,52 @@ func main() {
 	if failed.Load() {
 		os.Exit(1)
 	}
+}
+
+func newHostScheduler(root string, reserve, quota Resources) (*scheduler, error) {
+	environment, err := spacehost.New(root, slotpgroup.New)
+	if err != nil {
+		return nil, err
+	}
+	return newSpaceScheduler(environment, reserve, quota)
+}
+
+// Concrete providers and execution backends are composed in the command.
+func run(ctx context.Context, cfg *Config, group *Group, host *scheduler) error {
+	execution := github.WorkerConfig{Path: cfg.PathWorker, Dir: cfg.DirRunner}
+	if err := execution.Validate(); err != nil {
+		return fmt.Errorf("validate runner installation: %w", err)
+	}
+	version, err := os.ReadFile(filepath.Join(cfg.DirRunner, "VERSION"))
+	if err != nil {
+		return fmt.Errorf("read runner version: %w", err)
+	}
+	queue, err := github.New(github.Config{
+		ID: cfg.Id, Name: group.Name, Group: group.Group, Labels: group.Labels,
+		Version: Version, RunnerVersion: strings.TrimSpace(string(version)),
+		Worker: execution, LogRoot: cfg.DirLogs,
+		NewClient: func() (*scaleset.Client, error) {
+			info := scaleset.SystemInfo{System: "hrc", Version: Version}
+			if group.GitHubApp.Validate() == nil {
+				auth, err := group.GitHubApp.auth()
+				if err != nil {
+					return nil, err
+				}
+				return scaleset.NewClientWithGitHubApp(scaleset.ClientWithGitHubAppConfig{
+					GitHubConfigURL: group.Url, GitHubAppAuth: auth, SystemInfo: info,
+				})
+			}
+			token, err := group.Token.Take()
+			if err != nil {
+				return nil, fmt.Errorf("read token: %w", err)
+			}
+			return scaleset.NewClientWithPersonalAccessToken(scaleset.NewClientWithPersonalAccessTokenConfig{
+				GitHubConfigURL: group.Url, PersonalAccessToken: token, SystemInfo: info,
+			})
+		},
+	})
+	if err != nil {
+		return err
+	}
+	return serve(ctx, queue, host, group)
 }

@@ -3,7 +3,7 @@
 
 //go:build windows
 
-package process
+package slotpgroup
 
 import (
 	"errors"
@@ -52,7 +52,7 @@ func TestFindTrackedProcessRunning(t *testing.T) {
 	if _, err := start.Write([]byte{1}); err != nil {
 		t.Fatal(err)
 	}
-	if state, err := p.Wait(); err != nil || state.ExitCode() != 0 {
+	if state, err := p.Wait(); err != nil || state != 0 {
 		t.Fatalf("Wait = %v, %v", state, err)
 	}
 }
@@ -67,7 +67,7 @@ func TestKillTrackedProcessAlreadyExited(t *testing.T) {
 	if _, err := start.Write([]byte{1}); err != nil {
 		t.Fatal(err)
 	}
-	if state, err := p.Wait(); err != nil || state.ExitCode() != 0 {
+	if state, err := p.Wait(); err != nil || state != 0 {
 		t.Fatalf("Wait = %v, %v", state, err)
 	}
 	// The independent scanner handle keeps the exited process object alive.
